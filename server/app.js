@@ -6,7 +6,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 
 // Served by GET /config. Constants for now — there is deliberately no admin
 // route to change them at runtime.
-const CONFIG = { enabled: true, includeUrl: true, minIntervalMs: 0 };
+const CONFIG = { enabled: true, includeUrl: true, minIntervalMs: 5000 };
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

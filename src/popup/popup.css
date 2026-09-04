@@ -66,3 +66,26 @@ ul.visits li { display: flex; gap: 8px; padding: 2px 0; }
 .v-trans { color: var(--muted); font-size: 11px; }
 .v-submit { color: var(--accent); font-weight: 600; }
 .summary { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+
+button {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--accent); }
+
+.ok { color: var(--fg); }
+.muted { color: var(--muted); }
+
+.endpoint {
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  word-break: break-all;
+  margin-top: 4px;
+}
