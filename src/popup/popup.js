@@ -80,6 +80,29 @@ function renderForms(forms) {
   forms.forEach((form) => formsEl.appendChild(formBlock(form)));
 }
 
+function wireHighlighting(tabId) {
+  const send = (message) => {
+    chrome.tabs.sendMessage(tabId, message).catch(() => {});
+  };
+
+  formsEl.addEventListener('mouseover', (event) => {
+    const li = event.target.closest('li[data-field-index]');
+    if (!li) return;
+    const block = li.closest('[data-form-index]');
+    send({
+      type: 'highlight',
+      formIndex: Number(block.dataset.formIndex),
+      fieldIndex: Number(li.dataset.fieldIndex),
+    });
+  });
+
+  formsEl.addEventListener('mouseout', (event) => {
+    if (event.target.closest('li[data-field-index]')) send({ type: 'clearHighlight' });
+  });
+
+  window.addEventListener('pagehide', () => send({ type: 'clearHighlight' }));
+}
+
 async function main() {
   const tab = await getActiveTab();
   if (!tab || !tab.url) {
@@ -91,6 +114,7 @@ async function main() {
   try {
     const { forms } = await scanForms(tab.id);
     renderForms(forms);
+    wireHighlighting(tab.id);
   } catch (err) {
     formsEl.replaceChildren(el('p', 'error', CANNOT_INJECT));
     console.debug('Form Inspector: injection failed', err);
