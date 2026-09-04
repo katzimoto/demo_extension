@@ -176,3 +176,21 @@ test('an empty label element falls through to the next source', () => {
   assert.equal(f.label, 'Fallback');
   assert.equal(f.labelSource, 'placeholder');
 });
+
+test('aria-label with multiple spaces and newlines collapses to single spaces', () => {
+  const f = firstField('<form><input aria-label="Full   Name\n  Here"></form>');
+  assert.equal(f.label, 'Full Name Here');
+  assert.equal(f.labelSource, 'aria-label');
+});
+
+test('placeholder with multiple spaces and newlines collapses to single spaces', () => {
+  const f = firstField('<form><input placeholder="Search   Here\n   Now"></form>');
+  assert.equal(f.label, 'Search Here Now');
+  assert.equal(f.labelSource, 'placeholder');
+});
+
+test('aria-label that is only whitespace falls through to the next source', () => {
+  const f = firstField('<form><input aria-label="   \n   " placeholder="Fallback"></form>');
+  assert.equal(f.label, 'Fallback');
+  assert.equal(f.labelSource, 'placeholder');
+});

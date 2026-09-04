@@ -16,8 +16,12 @@ function fieldType(el) {
   return (el.getAttribute('type') || 'text').toLowerCase();
 }
 
+function collapseWs(str) {
+  return str.replace(/\s+/g, ' ').trim();
+}
+
 function textOf(el) {
-  return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+  return el ? collapseWs(el.textContent) : '';
 }
 
 function wrappingLabelText(label) {
@@ -46,7 +50,7 @@ function resolveLabel(el, doc) {
     if (text) return { label: text, labelSource: 'aria-labelledby' };
   }
 
-  const ariaLabel = (el.getAttribute('aria-label') || '').trim();
+  const ariaLabel = collapseWs(el.getAttribute('aria-label') || '');
   if (ariaLabel) return { label: ariaLabel, labelSource: 'aria-label' };
 
   const forLabel = labelForId(doc, el.getAttribute('id'));
@@ -61,7 +65,7 @@ function resolveLabel(el, doc) {
     if (text) return { label: text, labelSource: 'wrap' };
   }
 
-  const placeholder = (el.getAttribute('placeholder') || '').trim();
+  const placeholder = collapseWs(el.getAttribute('placeholder') || '');
   if (placeholder) return { label: placeholder, labelSource: 'placeholder' };
 
   return { label: null, labelSource: 'none' };
