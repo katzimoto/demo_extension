@@ -124,16 +124,6 @@ function formatWhen(ms) {
   });
 }
 
-async function loadVisits(url) {
-  const [visits, matches] = await Promise.all([
-    chrome.history.getVisits({ url }),
-    chrome.history.search({ text: url, startTime: 0, maxResults: 100 }),
-  ]);
-  // search() matches substrings across URL and title, so narrow to this URL.
-  const item = matches.find((m) => m.url === url) || null;
-  return { visits, item };
-}
-
 function visitRow(visit) {
   const li = el('li');
   li.appendChild(el('span', 'v-when', formatWhen(visit.visitTime)));
@@ -145,9 +135,8 @@ function visitRow(visit) {
 
 async function renderVisits(url) {
   let visits;
-  let item;
   try {
-    ({ visits, item } = await loadVisits(url));
+    visits = await chrome.history.getVisits({ url });
   } catch (err) {
     visitsEl.replaceChildren(el('p', 'error', 'Could not read history.'));
     console.debug('Form Inspector: history read failed', err);
@@ -162,7 +151,7 @@ async function renderVisits(url) {
   }
 
   const sorted = [...visits].sort((a, b) => b.visitTime - a.visitTime);
-  const total = item ? item.visitCount : visits.length;
+  const total = visits.length;
   visitsEl.appendChild(el('p', 'summary',
     `${total} visit${total === 1 ? '' : 's'} · first ${formatWhen(sorted[sorted.length - 1].visitTime)} · last ${formatWhen(sorted[0].visitTime)}`));
 
