@@ -18,6 +18,14 @@ The two halves meet at Chrome's visit *transition* types: a visit recorded
 as `form_submit` is a visit that happened because a form on that page was
 submitted. The popup calls those out.
 
+## Frames
+
+Top frame only. `executeScript` is not given `allFrames`, so forms inside
+iframes — embedded payment forms, third-party logins — are not reported, and
+such a page shows "No forms on this page." This is a deliberate position, not
+an oversight: `allFrames` would widen the injection surface and require the
+descriptor/cache index model to become frame-aware.
+
 ## Non-goals
 
 Explicitly excluded, decided during design:
@@ -59,7 +67,7 @@ popup is closed, so the extension declares no background worker.
 |-------------|-----|
 | `activeTab` | Read the active tab's URL and inject into it, on user gesture |
 | `scripting` | `chrome.scripting.executeScript` |
-| `history`   | `chrome.history.getVisits` and `chrome.history.search` |
+| `history`   | `chrome.history.getVisits` |
 
 ## File layout
 
@@ -97,10 +105,16 @@ if (typeof module !== 'undefined' && module.exports) {
 One exported pure function:
 
 ```
-extractForms(doc: Document) -> { forms: FormDescriptor[] }
+extractForms(doc: Document)    -> { forms: FormDescriptor[] }
+formControls(form: HTMLFormElement) -> Element[]
 ```
 
-It touches no `chrome.*` API, performs no rendering, and mutates nothing.
+`formControls` is the module's second export and the only cross-module interface
+in the extension: `content/inspector.js` uses it to cache element references in
+an order that matches the `fields[]` indices by construction. The index
+alignment described below rides on both sides calling this one function.
+
+They touch no `chrome.*` API, perform no rendering, and mutate nothing.
 This is the whole reason the module exists separately: it is the only part
 with real logic, and it is testable under jsdom.
 
@@ -138,8 +152,17 @@ descriptor indices and cached elements aligned by construction.
 | `value` | **Only** for `radio` and `checkbox`, and only the authored `value` attribute. Absent on every other type. |
 
 The `value` restriction is the mechanical guarantee behind the "never show
-typed values" non-goal: radio and checkbox `value` is markup the page author
-wrote, never user input.
+typed values" non-goal: radio and checkbox `value` is page data, never user
+input. A user cannot type into a radio or a checkbox — the only thing they can
+do is check it, and `checked` state is never part of a descriptor.
+
+Note one thing this does *not* claim. For `radio` and `checkbox` the `value`
+IDL attribute is in "default/on" mode, meaning it reflects the content
+attribute, so page script assigning `el.value` also rewrites the attribute
+`getAttribute('value')` reads. The guarantee is about user input, not about
+immunity to script. For text-like inputs the IDL attribute is in "value" mode
+and assigning `.value` leaves the content attribute untouched — which is why
+reading the attribute keeps typed text out of the descriptor.
 
 Hidden inputs are listed (name and type) but their values are not exposed —
 they routinely carry CSRF tokens.
@@ -189,23 +212,37 @@ so no overlay is left behind when the popup closes.
 On open:
 
 1. `chrome.tabs.query({active: true, currentWindow: true})` → tab `id`, `url`
-2. `chrome.scripting.executeScript` injecting
-   `['lib/form-extractor.js', 'content/inspector.js']`
-3. `chrome.tabs.sendMessage(tabId, {type:'scan'})` → descriptors
+2. `chrome.tabs.sendMessage(tabId, {type:'scan'})` as a ping; only if it fails,
+   `chrome.scripting.executeScript` injects
+   `['lib/form-extractor.js', 'content/inspector.js']` and the scan is retried.
+   The ping is not an optimisation. The isolated world persists across
+   injections into the same frame, and `form-extractor.js` declares top-level
+   `const`s, so re-injecting into a world that already ran it throws
+   `SyntaxError: Identifier 'CONTROL_TAGS' has already been declared` — which
+   would surface as a bogus "cannot be inspected" on the second popup open.
+3. Descriptors come back from whichever of those two paths ran
 4. Concurrently, the history reads (below)
 5. Render both sections
 
 Steps 3 and 4 run concurrently; neither section blocks the other's render.
 
 **Visits section.** `chrome.history.getVisits({url})` returns visit records
-with `visitTime` and `transition`. `chrome.history.search({text: url,
-startTime: 0})` supplies `title` and `visitCount` — `search` matches
-substrings across URL and title, so results are filtered to an exact URL
-match before use.
+with `visitTime` and `transition`. That single call is the whole data source.
+
+`chrome.history.search` is deliberately NOT used. It was originally specified
+here to supply `title` and `visitCount`, but the title was never rendered, and
+`visitCount` is a separately maintained counter that can diverge from the
+visit rows `getVisits` returns (partial history clearing, storage expiry,
+subframe navigations). Using it would let the summary line report a total that
+contradicts the list rendered directly beneath it. `search` also matches
+substrings across URL and title under a result cap, so the exact-match entry
+can be evicted for a URL that is a common substring — making which total you
+see depend on search-ranking noise. The count comes from `visits.length`, so
+the summary and the list are the same data by construction.
 
 Displayed: total visit count, first visit, last visit, and the 20 most
-recent visits with timestamp and transition type. Visits with transition
-`form_submit` are visually distinguished.
+recent visits with timestamp and transition type, with a note when there are
+more than 20. Visits with transition `form_submit` are visually distinguished.
 
 ## Error and empty states
 
@@ -220,7 +257,8 @@ independently.
 
 ## Testing
 
-`node --test tests/` with jsdom, one devDependency.
+`node --test` with jsdom, one devDependency. (The directory-argument form
+`node --test tests/` is broken on Node 24 — it loads the directory as a module.)
 
 Only `form-extractor.js` is unit-tested — it holds all the logic. The
 `chrome.*` glue and popup rendering are verified by hand in the browser;

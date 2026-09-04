@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Form Inspector",
+  "version": "0.1.0",
+  "description": "Inspect the forms on the current page alongside your visit history for it.",
+  "permissions": ["activeTab", "scripting", "history"],
+  "action": {
+    "default_title": "Form Inspector",
+    "default_popup": "popup/popup.html"
+  }
+}

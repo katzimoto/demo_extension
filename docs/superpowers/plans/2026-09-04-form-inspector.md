@@ -51,7 +51,7 @@ Establishes the project scaffold and the core `extractForms` shape. Scaffold is 
   "private": true,
   "description": "Chrome extension that inspects page forms and URL visit history",
   "scripts": {
-    "test": "node --test tests/"
+    "test": "node --test"
   },
   "devDependencies": {
     "jsdom": "^24.1.0"
@@ -350,8 +350,12 @@ Expected: FAIL — labels come back `null` with `labelSource: 'none'`.
 In `src/lib/form-extractor.js`, add above `describeField`:
 
 ```js
+function collapseWs(str) {
+  return str.replace(/\s+/g, ' ').trim();
+}
+
 function textOf(el) {
-  return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+  return el ? collapseWs(el.textContent) : '';
 }
 
 function wrappingLabelText(label) {
@@ -380,7 +384,7 @@ function resolveLabel(el, doc) {
     if (text) return { label: text, labelSource: 'aria-labelledby' };
   }
 
-  const ariaLabel = (el.getAttribute('aria-label') || '').trim();
+  const ariaLabel = collapseWs(el.getAttribute('aria-label') || '');
   if (ariaLabel) return { label: ariaLabel, labelSource: 'aria-label' };
 
   const forLabel = labelForId(doc, el.getAttribute('id'));
@@ -395,7 +399,7 @@ function resolveLabel(el, doc) {
     if (text) return { label: text, labelSource: 'wrap' };
   }
 
-  const placeholder = (el.getAttribute('placeholder') || '').trim();
+  const placeholder = collapseWs(el.getAttribute('placeholder') || '');
   if (placeholder) return { label: placeholder, labelSource: 'placeholder' };
 
   return { label: null, labelSource: 'none' };
@@ -449,7 +453,7 @@ function extractForms(doc) {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npm test`
-Expected: PASS, 22 tests.
+Expected: PASS, 25 tests (11 from Task 1, 14 label-resolution tests including whitespace collapse on every branch).
 
 - [ ] **Step 5: Commit**
 
@@ -550,12 +554,11 @@ test('REGRESSION GUARD: typed input is never exposed', () => {
   assert.ok(!JSON.stringify(fields).includes('typed secret'));
 });
 
-test('REGRESSION GUARD: a checked radio reports the authored value, not the live state', () => {
+test('REGRESSION GUARD: checking a radio changes neither its reported value nor exposes checked state', () => {
   const dom = new JSDOM('<form><input type="radio" name="r" value="authored"></form>');
   const doc = dom.window.document;
   const radio = doc.querySelector('input');
   radio.checked = true;
-  radio.value = 'mutated at runtime';
   const f = extractForms(doc).forms[0].fields[0];
   assert.equal(f.value, 'authored');
   assert.ok(!('checked' in f));
@@ -599,13 +602,16 @@ function describeField(el, index, doc) {
 }
 ```
 
-`getAttribute('value')` is what keeps the guarantee: it reads authored markup,
-so runtime mutation of the `.value` property cannot leak through.
+`getAttribute('value')` is what keeps the guarantee for text-like inputs: their
+`value` IDL attribute is in "value" mode, so assigning `.value` never touches the
+content attribute and typed text cannot leak through. Radio and checkbox are in
+"default/on" mode — their `.value` reflects the attribute — but that is page
+script, not user input, and `checked` is never exposed.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npm test`
-Expected: PASS, 32 tests.
+Expected: PASS, 35 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -857,12 +863,21 @@ const CANNOT_INJECT =
   'This page cannot be inspected. Chrome blocks extensions on browser pages ' +
   '(chrome://, the Web Store, and the PDF viewer).';
 
+// Ping before injecting. The isolated world persists across executeScript calls
+// into the same frame, and form-extractor.js declares top-level `const`s, so
+// re-injecting into a world that already has it throws
+// "Identifier 'CONTROL_TAGS' has already been declared" — which would surface as
+// a bogus "cannot be inspected" on the second popup open.
 async function scanForms(tabId) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: ['lib/form-extractor.js', 'content/inspector.js'],
-  });
-  return chrome.tabs.sendMessage(tabId, { type: 'scan' });
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: 'scan' });
+  } catch {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['lib/form-extractor.js', 'content/inspector.js'],
+    });
+    return chrome.tabs.sendMessage(tabId, { type: 'scan' });
+  }
 }
 
 function el(tag, className, text) {
@@ -1130,15 +1145,11 @@ function formatWhen(ms) {
   });
 }
 
-async function loadVisits(url) {
-  const [visits, matches] = await Promise.all([
-    chrome.history.getVisits({ url }),
-    chrome.history.search({ text: url, startTime: 0, maxResults: 100 }),
-  ]);
-  // search() matches substrings across URL and title, so narrow to this URL.
-  const item = matches.find((m) => m.url === url) || null;
-  return { visits, item };
-}
+// history.getVisits is the whole data source. history.search is deliberately not
+// used: its visitCount is a separate counter that can disagree with the visit rows
+// below it, and its substring matching under a result cap makes the exact-match
+// entry evictable. Deriving the total from `visits` keeps summary and list in sync
+// by construction.
 
 function visitRow(visit) {
   const li = el('li');
@@ -1151,9 +1162,8 @@ function visitRow(visit) {
 
 async function renderVisits(url) {
   let visits;
-  let item;
   try {
-    ({ visits, item } = await loadVisits(url));
+    visits = await chrome.history.getVisits({ url });
   } catch (err) {
     visitsEl.replaceChildren(el('p', 'error', 'Could not read history.'));
     console.debug('Form Inspector: history read failed', err);
@@ -1168,7 +1178,7 @@ async function renderVisits(url) {
   }
 
   const sorted = [...visits].sort((a, b) => b.visitTime - a.visitTime);
-  const total = item ? item.visitCount : visits.length;
+  const total = visits.length;
   visitsEl.appendChild(el('p', 'summary',
     `${total} visit${total === 1 ? '' : 's'} · first ${formatWhen(sorted[sorted.length - 1].visitTime)} · last ${formatWhen(sorted[0].visitTime)}`));
 
@@ -1231,7 +1241,7 @@ Expected: the Forms panel shows the cannot-inspect message **and** the Visits pa
 - [ ] **Step 4: Full verification**
 
 Run: `npm test`
-Expected: PASS, 32 tests.
+Expected: PASS, 35 tests.
 
 - [ ] **Step 5: Commit**
 

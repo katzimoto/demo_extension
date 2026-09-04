@@ -1,0 +1,12 @@
+{
+  "name": "form-inspector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension that inspects page forms and URL visit history",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.0"
+  }
+}
