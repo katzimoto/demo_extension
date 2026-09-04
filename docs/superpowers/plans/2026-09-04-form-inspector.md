@@ -51,7 +51,7 @@ Establishes the project scaffold and the core `extractForms` shape. Scaffold is 
   "private": true,
   "description": "Chrome extension that inspects page forms and URL visit history",
   "scripts": {
-    "test": "node --test tests/"
+    "test": "node --test"
   },
   "devDependencies": {
     "jsdom": "^24.1.0"

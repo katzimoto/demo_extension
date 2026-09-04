@@ -220,7 +220,8 @@ independently.
 
 ## Testing
 
-`node --test tests/` with jsdom, one devDependency.
+`node --test` with jsdom, one devDependency. (The directory-argument form
+`node --test tests/` is broken on Node 24 — it loads the directory as a module.)
 
 Only `form-extractor.js` is unit-tested — it holds all the logic. The
 `chrome.*` glue and popup rendering are verified by hand in the browser;
