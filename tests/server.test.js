@@ -87,7 +87,7 @@ test('GET /config returns the documented shape', async () => {
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(typeof body.enabled, 'boolean');
-    assert.equal(typeof body.collectUrl, 'boolean');
+    assert.equal(typeof body.includeUrl, 'boolean');
     assert.ok(Number.isInteger(body.minIntervalMs) && body.minIntervalMs >= 0);
   });
 });
@@ -158,6 +158,43 @@ test('a rejected body is not stored', async () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'not json',
     });
     assert.equal(store.size, 0);
+  });
+});
+
+test('a form that is not an object is rejected', async () => {
+  await withServer(async (base) => {
+    const post = (forms) => fetch(`${base}/collect`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sentAt: 1, forms }),
+    });
+    assert.equal((await post([null])).status, 400);
+    assert.equal((await post([undefined])).status, 400);
+    assert.equal((await post(['nope'])).status, 400);
+    assert.equal((await post([42])).status, 400);
+    assert.equal((await post([[]])).status, 400);
+  });
+});
+
+test('REGRESSION: a rejected payload is never stored', async () => {
+  await withServer(async (base, store) => {
+    await fetch(`${base}/collect`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sentAt: 1, forms: [null] }),
+    });
+    assert.equal(store.size, 0, 'a 400 response must leave the store empty');
+  });
+});
+
+test('a form with a missing or malformed fields array counts as zero', async () => {
+  await withServer(async (base) => {
+    const res = await fetch(`${base}/collect`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sentAt: 1, forms: [{ id: 'a' }, { id: 'b', fields: 'nope' }] }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.formCount, 2);
+    assert.equal(body.fieldCount, 0);
   });
 });
 

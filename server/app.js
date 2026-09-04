@@ -6,7 +6,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 
 // Served by GET /config. Constants for now — there is deliberately no admin
 // route to change them at runtime.
-const CONFIG = { enabled: true, collectUrl: true, minIntervalMs: 0 };
+const CONFIG = { enabled: true, includeUrl: true, minIntervalMs: 0 };
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -43,7 +43,8 @@ function readBody(req) {
 
 function countFields(forms) {
   return forms.reduce(
-    (total, form) => total + (Array.isArray(form.fields) ? form.fields.length : 0),
+    (total, form) =>
+      total + (form && Array.isArray(form.fields) ? form.fields.length : 0),
     0
   );
 }
@@ -71,6 +72,12 @@ async function handleCollect(req, res, store) {
   }
   if (!Array.isArray(payload.forms)) {
     return json(res, 400, { ok: false, error: 'forms must be an array' });
+  }
+  const formsAreObjects = payload.forms.every(
+    (form) => form !== null && typeof form === 'object' && !Array.isArray(form)
+  );
+  if (!formsAreObjects) {
+    return json(res, 400, { ok: false, error: 'each form must be an object' });
   }
 
   const record = store.add(payload);
