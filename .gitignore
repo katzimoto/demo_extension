@@ -4,3 +4,4 @@ ruvector.db
 .claude-flow/logs/
 .claude-flow/daemon.pid
 .claude-flow/daemon-state.json
+.superpowers/
