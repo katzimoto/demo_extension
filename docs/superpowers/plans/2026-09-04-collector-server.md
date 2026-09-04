@@ -15,7 +15,7 @@
 - **Zero runtime dependencies.** `package.json` `dependencies` stays empty; `jsdom` remains the only devDependency. No Express, no node-fetch — Node 24's global `fetch` covers the tests.
 - **The payload shape is fixed in client code.** `buildPayload` constructs exactly `sentAt`, `forms`, and conditionally `url`. No config value may add a key. This is the invariant that makes a configurable endpoint safe.
 - **Typed field values are never sent.** The extractor never reads them; nothing here may change that.
-- **Config fails closed.** Anything missing, malformed, or wrongly typed collapses to the narrower value: `enabled: false`, `includeUrl: false`, `minIntervalMs: 0`.
+- **Config fails closed.** Anything missing, malformed, or wrongly typed collapses to the narrower value: `enabled: false`, `includeUrl: false`, `minIntervalMs: DEFAULT_MIN_INTERVAL_MS` (60000). Deliberately NOT `0` — zero means *no throttling*, the least restrictive value, so collapsing to it would let a garbled config collect more than a well-formed one.
 - **A failed config fetch means do not send, and must say so.** A server that is down must never be indistinguishable from a server that disabled sending.
 - **The collector section fails independently** of the forms and visits sections, exactly as those two already do.
 - Extension root is `src/`; Chrome loads `src/` unpacked. No build step.
@@ -374,7 +374,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 
 // Served by GET /config. Constants for now — there is deliberately no admin
 // route to change them at runtime.
-const CONFIG = { enabled: true, includeUrl: true, minIntervalMs: 0 };
+const CONFIG = { enabled: true, includeUrl: true, minIntervalMs: 5000 };
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -566,12 +566,12 @@ test('a well-formed config passes through', () => {
 
 test('FAILS CLOSED: missing fields collapse to the narrower value', () => {
   assert.deepEqual(normalizeConfig({}), {
-    enabled: false, includeUrl: false, minIntervalMs: 0,
+    enabled: false, includeUrl: false, minIntervalMs: DEFAULT_MIN_INTERVAL_MS,
   });
 });
 
 test('FAILS CLOSED: non-object input collapses to the narrower value', () => {
-  const closed = { enabled: false, includeUrl: false, minIntervalMs: 0 };
+  const closed = { enabled: false, includeUrl: false, minIntervalMs: DEFAULT_MIN_INTERVAL_MS };
   for (const raw of [null, undefined, 'yes', 42, [], true]) {
     assert.deepEqual(normalizeConfig(raw), closed, `input ${JSON.stringify(raw)}`);
   }
@@ -586,9 +586,9 @@ test('FAILS CLOSED: truthy-but-not-true values do not enable', () => {
 });
 
 test('a negative or fractional interval collapses to 0', () => {
-  assert.equal(normalizeConfig({ minIntervalMs: -1 }).minIntervalMs, 0);
-  assert.equal(normalizeConfig({ minIntervalMs: 1.5 }).minIntervalMs, 0);
-  assert.equal(normalizeConfig({ minIntervalMs: 'soon' }).minIntervalMs, 0);
+  assert.equal(normalizeConfig({ minIntervalMs: -1 }).minIntervalMs, DEFAULT_MIN_INTERVAL_MS);
+  assert.equal(normalizeConfig({ minIntervalMs: 1.5 }).minIntervalMs, DEFAULT_MIN_INTERVAL_MS);
+  assert.equal(normalizeConfig({ minIntervalMs: 'soon' }).minIntervalMs, DEFAULT_MIN_INTERVAL_MS);
   assert.equal(normalizeConfig({ minIntervalMs: NaN }).minIntervalMs, 0);
   assert.equal(normalizeConfig({ minIntervalMs: Infinity }).minIntervalMs, 0);
 });
@@ -1017,9 +1017,20 @@ function renderConnect(endpoint) {
 
 ```js
 async function syncToServer(url, forms) {
-  const endpoint = await getEndpoint();
+  // Every await in this function must sit inside a try. It is called from main()
+  // and must never reject, or it takes another popup section down with it.
+  let endpoint;
+  let granted;
+  try {
+    endpoint = await getEndpoint();
+    granted = await hasOriginAccess(endpoint);
+  } catch (err) {
+    collectorEl.replaceChildren(el('p', 'error', 'Could not read collector settings.'));
+    console.warn('Form Inspector: collector setup failed', err);
+    return;
+  }
 
-  if (!(await hasOriginAccess(endpoint))) {
+  if (!granted) {
     renderConnect(endpoint);
     return;
   }

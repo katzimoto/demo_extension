@@ -40,8 +40,12 @@ Explicitly excluded, decided during design:
 - **Current field values.** The popup never displays what a user has typed.
   Only authored markup is read.
 - **Submission capture.** No recording of submit events or submitted data.
-- **Cross-page form records.** No storage of "page X had N forms". Nothing
-  persists; every popup open is a fresh read.
+- **Cross-page form records.** No storage of "page X had N forms"; every popup
+  open re-reads the page from scratch. One exception since the collector was
+  added: `chrome.storage.local` keeps a `lastSent:<url>` timestamp per URL
+  successfully sent to the collector, used only for throttling. That is a
+  persistent local record of which pages were sent and when, and it is never
+  pruned.
 - **Chrome autofill data.** No extension API exposes it.
 
 ## Architecture

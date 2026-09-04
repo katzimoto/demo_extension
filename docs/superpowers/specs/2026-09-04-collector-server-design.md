@@ -52,14 +52,14 @@ Consequence, accepted: closing the popup mid-send aborts the send.
 This section is the seam. The server and the extension-side modules are built
 against it independently; nothing else couples them.
 
-Base URL is configurable, default `http://localhost:3000`.
+Base URL is read from `chrome.storage.local`, default `http://localhost:3000`. No settings UI writes that key in this build — changing it means editing storage directly. The storage permission is earned by the per-URL send timestamps regardless.
 
 #### `GET /config`
 
 200, `application/json`:
 
 ```json
-{ "enabled": true, "includeUrl": true, "minIntervalMs": 0 }
+{ "enabled": true, "includeUrl": true, "minIntervalMs": 5000 }
 ```
 
 | Field | Type | Meaning |
@@ -104,7 +104,7 @@ Errors, all `{ "ok": false, "error": "<reason>" }`:
 
 | Status | Condition |
 |--------|-----------|
-| 400 | body is not JSON, not an object, or `forms` is not an array |
+| 400 | body is not JSON, not an object, `forms` is not an array, or any element of `forms` is not a non-null non-array object |
 | 405 | method other than POST on this path |
 | 413 | body exceeds 1 MB |
 
@@ -114,7 +114,7 @@ Errors, all `{ "ok": false, "error": "<reason>" }`:
 
 ```json
 { "count": 3,
-  "records": [ { "id": "r-1", "receivedAt": 1788523211123, "payload": { } } ] }
+  "records": [ { "id": "r-3", "receivedAt": 1788523211123, "payload": { } } ] }
 ```
 
 Newest first. This route exists so a human can see that data arrived.
@@ -188,8 +188,9 @@ A `syncToServer(url, forms)` step, running after `renderForms`:
 2. `GET /config` → `normalizeConfig`.
 3. If `enabled` is false, or the last send for this URL was under
    `minIntervalMs` ago, render why and stop.
-4. `buildPayload` → `POST /collect`.
-5. Render the server's receipt, or the failure.
+4. If the page has no forms, render "No forms on this page — nothing sent." and stop — posting a URL with an empty `forms` array would make the collector a browsing log by a second route, which the Non-goals forbid in substance if not in letter.
+5. `buildPayload` → `POST /collect`.
+6. Render the server's receipt, or the failure.
 
 **A failed config fetch means do not send**, and it must say so. A server that
 is down must not become indistinguishable from a server that disabled sending.
