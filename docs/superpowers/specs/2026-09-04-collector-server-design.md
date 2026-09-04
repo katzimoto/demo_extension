@@ -59,13 +59,13 @@ Base URL is configurable, default `http://localhost:3000`.
 200, `application/json`:
 
 ```json
-{ "enabled": true, "collectUrl": true, "minIntervalMs": 0 }
+{ "enabled": true, "includeUrl": true, "minIntervalMs": 0 }
 ```
 
 | Field | Type | Meaning |
 |-------|------|---------|
 | `enabled` | boolean | when false the extension sends nothing |
-| `collectUrl` | boolean | when false the payload omits `url` entirely |
+| `includeUrl` | boolean | when false the payload omits `url` entirely. A boolean, not a URL — it answers "include the page URL?" |
 | `minIntervalMs` | integer ≥ 0 | minimum gap between sends for one URL |
 
 #### `POST /collect`
@@ -80,7 +80,7 @@ Request, `application/json`:
 }
 ```
 
-`url` is present only when `collectUrl` is true. `forms` is passed through
+`url` is present only when `includeUrl` is true. `forms` is passed through
 unmodified from the extractor.
 
 201 on success:
@@ -150,13 +150,21 @@ for now; there is no admin route to change them, and adding one is out of scope.
 ### `src/lib/config.js` — pure
 
 ```
-normalizeConfig(raw: unknown) -> { enabled, collectUrl, minIntervalMs }
+normalizeConfig(raw: unknown) -> { enabled, includeUrl, minIntervalMs }
 ```
 
 **Fails closed.** Anything missing, malformed, or of the wrong type collapses
-to the *narrower* value: `enabled: false`, `collectUrl: false`,
-`minIntervalMs: 0`. A garbled config must never result in more collection than
-a well-formed one.
+to the *narrower* value: `enabled: false`, `includeUrl: false`,
+`minIntervalMs: 60000` (`DEFAULT_MIN_INTERVAL_MS`). A garbled config must never
+result in more collection than a well-formed one.
+
+Note the interval's default is deliberately **not** zero. Zero means "no
+throttling" — the least restrictive value the field can take — so collapsing to
+it would let a config with a valid `enabled: true` and a corrupted interval
+produce *unthrottled* sending, which is more collection than a well-formed
+config carrying a positive interval. An explicitly valid integer ≥ 0 is still
+honoured, including a deliberate `0`; only malformed or absent values take the
+default.
 
 ### `src/lib/payload.js` — pure
 
@@ -168,7 +176,7 @@ No `chrome.*`, no network, no rendering — the same shape as
 `form-extractor.js`, and for the same reason. **This module is where the
 "payload shape is fixed" invariant lives**, so it is where a regression test
 can prove no config widens it. It constructs exactly three keys, omitting `url`
-when `config.collectUrl` is not true. It never reads from `forms` beyond
+when `config.includeUrl` is not true. It never reads from `forms` beyond
 passing the array through.
 
 ### `src/popup/popup.js`
@@ -188,7 +196,7 @@ is down must not become indistinguishable from a server that disabled sending.
 
 The last-send timestamp is keyed by page URL in `chrome.storage.local`,
 alongside the configured endpoint. Note the key is always the real URL even
-when `collectUrl` is false — throttling is a local decision, and suppressing
+when `includeUrl` is false — throttling is a local decision, and suppressing
 the URL in the payload does not mean the extension has to forget which page it
 is on.
 
@@ -241,7 +249,7 @@ browser, and the plan should exploit that.
 **Unit, pure modules** — `tests/config.test.js`, `tests/payload.test.js`:
 - every fail-closed path in `normalizeConfig` (missing, null, wrong types,
   negative interval, extra keys ignored)
-- `buildPayload` omits `url` when `collectUrl` is false and includes it when true
+- `buildPayload` omits `url` when `includeUrl` is false and includes it when true
 - **regression guard:** no config value produces a key outside
   `{sentAt, url, forms}`, and a descriptor carrying a typed value cannot exist
   because the extractor never emits one — assert the built payload's serialized

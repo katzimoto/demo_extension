@@ -15,7 +15,7 @@
 - **Zero runtime dependencies.** `package.json` `dependencies` stays empty; `jsdom` remains the only devDependency. No Express, no node-fetch — Node 24's global `fetch` covers the tests.
 - **The payload shape is fixed in client code.** `buildPayload` constructs exactly `sentAt`, `forms`, and conditionally `url`. No config value may add a key. This is the invariant that makes a configurable endpoint safe.
 - **Typed field values are never sent.** The extractor never reads them; nothing here may change that.
-- **Config fails closed.** Anything missing, malformed, or wrongly typed collapses to the narrower value: `enabled: false`, `collectUrl: false`, `minIntervalMs: 0`.
+- **Config fails closed.** Anything missing, malformed, or wrongly typed collapses to the narrower value: `enabled: false`, `includeUrl: false`, `minIntervalMs: 0`.
 - **A failed config fetch means do not send, and must say so.** A server that is down must never be indistinguishable from a server that disabled sending.
 - **The collector section fails independently** of the forms and visits sections, exactly as those two already do.
 - Extension root is `src/`; Chrome loads `src/` unpacked. No build step.
@@ -248,7 +248,7 @@ test('GET /config returns the documented shape', async () => {
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(typeof body.enabled, 'boolean');
-    assert.equal(typeof body.collectUrl, 'boolean');
+    assert.equal(typeof body.includeUrl, 'boolean');
     assert.ok(Number.isInteger(body.minIntervalMs) && body.minIntervalMs >= 0);
   });
 });
@@ -374,7 +374,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 
 // Served by GET /config. Constants for now — there is deliberately no admin
 // route to change them at runtime.
-const CONFIG = { enabled: true, collectUrl: true, minIntervalMs: 0 };
+const CONFIG = { enabled: true, includeUrl: true, minIntervalMs: 0 };
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -544,7 +544,7 @@ git commit -m "Add collector server routes with a round-trip test"
 
 **Interfaces:**
 - Consumes: nothing
-- Produces: `normalizeConfig(raw: unknown) -> { enabled: boolean, collectUrl: boolean, minIntervalMs: number }`
+- Produces: `normalizeConfig(raw: unknown) -> { enabled: boolean, includeUrl: boolean, minIntervalMs: number }`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -559,19 +559,19 @@ const { normalizeConfig } = require('../src/lib/config.js');
 
 test('a well-formed config passes through', () => {
   assert.deepEqual(
-    normalizeConfig({ enabled: true, collectUrl: true, minIntervalMs: 5000 }),
-    { enabled: true, collectUrl: true, minIntervalMs: 5000 }
+    normalizeConfig({ enabled: true, includeUrl: true, minIntervalMs: 5000 }),
+    { enabled: true, includeUrl: true, minIntervalMs: 5000 }
   );
 });
 
 test('FAILS CLOSED: missing fields collapse to the narrower value', () => {
   assert.deepEqual(normalizeConfig({}), {
-    enabled: false, collectUrl: false, minIntervalMs: 0,
+    enabled: false, includeUrl: false, minIntervalMs: 0,
   });
 });
 
 test('FAILS CLOSED: non-object input collapses to the narrower value', () => {
-  const closed = { enabled: false, collectUrl: false, minIntervalMs: 0 };
+  const closed = { enabled: false, includeUrl: false, minIntervalMs: 0 };
   for (const raw of [null, undefined, 'yes', 42, [], true]) {
     assert.deepEqual(normalizeConfig(raw), closed, `input ${JSON.stringify(raw)}`);
   }
@@ -579,9 +579,9 @@ test('FAILS CLOSED: non-object input collapses to the narrower value', () => {
 
 test('FAILS CLOSED: truthy-but-not-true values do not enable', () => {
   for (const truthy of ['true', 1, 'yes', {}, []]) {
-    const config = normalizeConfig({ enabled: truthy, collectUrl: truthy });
+    const config = normalizeConfig({ enabled: truthy, includeUrl: truthy });
     assert.equal(config.enabled, false, `enabled from ${JSON.stringify(truthy)}`);
-    assert.equal(config.collectUrl, false, `collectUrl from ${JSON.stringify(truthy)}`);
+    assert.equal(config.includeUrl, false, `includeUrl from ${JSON.stringify(truthy)}`);
   }
 });
 
@@ -599,13 +599,13 @@ test('zero is a legitimate interval and is preserved', () => {
 
 test('unknown keys are dropped, not carried through', () => {
   const config = normalizeConfig({ enabled: true, collectValues: true, endpoint: 'evil' });
-  assert.deepEqual(Object.keys(config).sort(), ['collectUrl', 'enabled', 'minIntervalMs']);
+  assert.deepEqual(Object.keys(config).sort(), ['includeUrl', 'enabled', 'minIntervalMs']);
 });
 
-test('collectUrl is independent of enabled', () => {
-  const config = normalizeConfig({ enabled: true, collectUrl: false });
+test('includeUrl is independent of enabled', () => {
+  const config = normalizeConfig({ enabled: true, includeUrl: false });
   assert.equal(config.enabled, true);
-  assert.equal(config.collectUrl, false);
+  assert.equal(config.includeUrl, false);
 });
 ```
 
@@ -635,7 +635,7 @@ function normalizeConfig(raw) {
 
   return {
     enabled: source.enabled === true,
-    collectUrl: source.collectUrl === true,
+    includeUrl: source.includeUrl === true,
     minIntervalMs:
       Number.isInteger(interval) && interval >= 0 ? interval : 0,
   };
@@ -692,25 +692,25 @@ const { extractForms } = require('../src/lib/form-extractor.js');
 
 const FORMS = [{ index: 0, id: 'f', name: '', action: '/x', method: 'get', fieldCount: 0, fields: [] }];
 
-test('includes url when collectUrl is true', () => {
+test('includes url when includeUrl is true', () => {
   const payload = buildPayload(FORMS, 'https://example.com/a', 123, {
-    enabled: true, collectUrl: true, minIntervalMs: 0,
+    enabled: true, includeUrl: true, minIntervalMs: 0,
   });
   assert.equal(payload.url, 'https://example.com/a');
   assert.equal(payload.sentAt, 123);
   assert.deepEqual(payload.forms, FORMS);
 });
 
-test('omits url entirely when collectUrl is false', () => {
+test('omits url entirely when includeUrl is false', () => {
   const payload = buildPayload(FORMS, 'https://example.com/a', 123, {
-    enabled: true, collectUrl: false, minIntervalMs: 0,
+    enabled: true, includeUrl: false, minIntervalMs: 0,
   });
   assert.ok(!('url' in payload), 'url key must be absent, not undefined');
   assert.deepEqual(Object.keys(payload).sort(), ['forms', 'sentAt']);
 });
 
 test('a missing or malformed config omits the url', () => {
-  for (const config of [undefined, null, {}, { collectUrl: 'true' }]) {
+  for (const config of [undefined, null, {}, { includeUrl: 'true' }]) {
     const payload = buildPayload(FORMS, 'https://example.com/a', 1, config);
     assert.ok(!('url' in payload), `config ${JSON.stringify(config)}`);
   }
@@ -718,7 +718,7 @@ test('a missing or malformed config omits the url', () => {
 
 test('FIXED SHAPE: no config value can add a key', () => {
   const hostile = normalizeConfig({
-    enabled: true, collectUrl: true, minIntervalMs: 0,
+    enabled: true, includeUrl: true, minIntervalMs: 0,
     collectValues: true, includeCookies: true, extraFields: ['password'],
   });
   const payload = buildPayload(FORMS, 'https://example.com/a', 1, hostile);
@@ -727,7 +727,7 @@ test('FIXED SHAPE: no config value can add a key', () => {
 
 test('FIXED SHAPE: raw unnormalised config cannot add a key either', () => {
   const payload = buildPayload(FORMS, 'https://example.com/a', 1, {
-    collectUrl: true, collectValues: true, secrets: 'yes',
+    includeUrl: true, collectValues: true, secrets: 'yes',
   });
   assert.deepEqual(Object.keys(payload).sort(), ['forms', 'sentAt', 'url']);
 });
@@ -747,7 +747,7 @@ test('CROSS-MODULE GUARD: typed input never reaches the payload', () => {
 
   const { forms } = extractForms(doc);
   const payload = buildPayload(forms, 'https://example.com/login', 1, {
-    enabled: true, collectUrl: true, minIntervalMs: 0,
+    enabled: true, includeUrl: true, minIntervalMs: 0,
   });
 
   const wire = JSON.stringify(payload);
@@ -761,7 +761,7 @@ test('CROSS-MODULE GUARD: typed input never reaches the payload', () => {
 
 test('forms are passed through by reference without mutation', () => {
   const original = JSON.parse(JSON.stringify(FORMS));
-  buildPayload(FORMS, 'https://example.com/a', 1, { collectUrl: true });
+  buildPayload(FORMS, 'https://example.com/a', 1, { includeUrl: true });
   assert.deepEqual(FORMS, original);
 });
 ```
@@ -786,7 +786,7 @@ Create `src/lib/payload.js`:
 // that can turn collection off, not one that can widen it.
 function buildPayload(forms, url, now, config) {
   const payload = { sentAt: now, forms };
-  if (config && config.collectUrl === true) {
+  if (config && config.includeUrl === true) {
     payload.url = url;
   }
   return payload;
@@ -986,7 +986,7 @@ async function markSent(url, when) {
 }
 ```
 
-The throttle key is always the real page URL, even when `collectUrl` is false — throttling is a local decision, and suppressing the URL in the payload does not mean the extension forgets which page it is on.
+The throttle key is always the real page URL, even when `includeUrl` is false — throttling is a local decision, and suppressing the URL in the payload does not mean the extension forgets which page it is on.
 
 - [ ] **Step 3: Add the connect affordance**
 
@@ -1075,7 +1075,7 @@ async function syncToServer(url, forms) {
       el('p', 'ok',
         `Sent — server received ${body.formCount} form${body.formCount === 1 ? '' : 's'}, ` +
         `${body.fieldCount} field${body.fieldCount === 1 ? '' : 's'} as ${body.id}.`),
-      el('p', 'muted', config.collectUrl ? 'Page URL included.' : 'Page URL withheld by server config.'),
+      el('p', 'muted', config.includeUrl ? 'Page URL included.' : 'Page URL withheld by server config.'),
       el('p', 'endpoint', endpoint)
     );
   } catch (err) {
