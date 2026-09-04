@@ -350,8 +350,12 @@ Expected: FAIL — labels come back `null` with `labelSource: 'none'`.
 In `src/lib/form-extractor.js`, add above `describeField`:
 
 ```js
+function collapseWs(str) {
+  return str.replace(/\s+/g, ' ').trim();
+}
+
 function textOf(el) {
-  return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+  return el ? collapseWs(el.textContent) : '';
 }
 
 function wrappingLabelText(label) {
@@ -380,7 +384,7 @@ function resolveLabel(el, doc) {
     if (text) return { label: text, labelSource: 'aria-labelledby' };
   }
 
-  const ariaLabel = (el.getAttribute('aria-label') || '').trim();
+  const ariaLabel = collapseWs(el.getAttribute('aria-label') || '');
   if (ariaLabel) return { label: ariaLabel, labelSource: 'aria-label' };
 
   const forLabel = labelForId(doc, el.getAttribute('id'));
@@ -395,7 +399,7 @@ function resolveLabel(el, doc) {
     if (text) return { label: text, labelSource: 'wrap' };
   }
 
-  const placeholder = (el.getAttribute('placeholder') || '').trim();
+  const placeholder = collapseWs(el.getAttribute('placeholder') || '');
   if (placeholder) return { label: placeholder, labelSource: 'placeholder' };
 
   return { label: null, labelSource: 'none' };
@@ -449,7 +453,7 @@ function extractForms(doc) {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npm test`
-Expected: PASS, 22 tests.
+Expected: PASS, 25 tests (11 from Task 1, 14 label-resolution tests including whitespace collapse on every branch).
 
 - [ ] **Step 5: Commit**
 
@@ -605,7 +609,7 @@ so runtime mutation of the `.value` property cannot leak through.
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npm test`
-Expected: PASS, 32 tests.
+Expected: PASS, 35 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1231,7 +1235,7 @@ Expected: the Forms panel shows the cannot-inspect message **and** the Visits pa
 - [ ] **Step 4: Full verification**
 
 Run: `npm test`
-Expected: PASS, 32 tests.
+Expected: PASS, 35 tests.
 
 - [ ] **Step 5: Commit**
 
