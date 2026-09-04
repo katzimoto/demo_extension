@@ -198,9 +198,15 @@ so no overlay is left behind when the popup closes.
 On open:
 
 1. `chrome.tabs.query({active: true, currentWindow: true})` → tab `id`, `url`
-2. `chrome.scripting.executeScript` injecting
-   `['lib/form-extractor.js', 'content/inspector.js']`
-3. `chrome.tabs.sendMessage(tabId, {type:'scan'})` → descriptors
+2. `chrome.tabs.sendMessage(tabId, {type:'scan'})` as a ping; only if it fails,
+   `chrome.scripting.executeScript` injects
+   `['lib/form-extractor.js', 'content/inspector.js']` and the scan is retried.
+   The ping is not an optimisation. The isolated world persists across
+   injections into the same frame, and `form-extractor.js` declares top-level
+   `const`s, so re-injecting into a world that already ran it throws
+   `SyntaxError: Identifier 'CONTROL_TAGS' has already been declared` — which
+   would surface as a bogus "cannot be inspected" on the second popup open.
+3. Descriptors come back from whichever of those two paths ran
 4. Concurrently, the history reads (below)
 5. Render both sections
 
