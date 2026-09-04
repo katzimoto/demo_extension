@@ -863,12 +863,21 @@ const CANNOT_INJECT =
   'This page cannot be inspected. Chrome blocks extensions on browser pages ' +
   '(chrome://, the Web Store, and the PDF viewer).';
 
+// Ping before injecting. The isolated world persists across executeScript calls
+// into the same frame, and form-extractor.js declares top-level `const`s, so
+// re-injecting into a world that already has it throws
+// "Identifier 'CONTROL_TAGS' has already been declared" — which would surface as
+// a bogus "cannot be inspected" on the second popup open.
 async function scanForms(tabId) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: ['lib/form-extractor.js', 'content/inspector.js'],
-  });
-  return chrome.tabs.sendMessage(tabId, { type: 'scan' });
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: 'scan' });
+  } catch {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['lib/form-extractor.js', 'content/inspector.js'],
+    });
+    return chrome.tabs.sendMessage(tabId, { type: 'scan' });
+  }
 }
 
 function el(tag, className, text) {
