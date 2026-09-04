@@ -103,6 +103,78 @@ function wireHighlighting(tabId) {
   window.addEventListener('pagehide', () => send({ type: 'clearHighlight' }));
 }
 
+const TRANSITION_LABELS = {
+  link: 'link',
+  typed: 'typed',
+  auto_bookmark: 'bookmark',
+  auto_subframe: 'subframe',
+  manual_subframe: 'subframe',
+  generated: 'generated',
+  auto_toplevel: 'startup',
+  form_submit: 'form submit',
+  reload: 'reload',
+  keyword: 'keyword',
+  keyword_generated: 'keyword',
+};
+
+function formatWhen(ms) {
+  return new Date(ms).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+async function loadVisits(url) {
+  const [visits, matches] = await Promise.all([
+    chrome.history.getVisits({ url }),
+    chrome.history.search({ text: url, startTime: 0, maxResults: 100 }),
+  ]);
+  // search() matches substrings across URL and title, so narrow to this URL.
+  const item = matches.find((m) => m.url === url) || null;
+  return { visits, item };
+}
+
+function visitRow(visit) {
+  const li = el('li');
+  li.appendChild(el('span', 'v-when', formatWhen(visit.visitTime)));
+  const label = TRANSITION_LABELS[visit.transition] || visit.transition;
+  const isSubmit = visit.transition === 'form_submit';
+  li.appendChild(el('span', isSubmit ? 'v-trans v-submit' : 'v-trans', label));
+  return li;
+}
+
+async function renderVisits(url) {
+  let visits;
+  let item;
+  try {
+    ({ visits, item } = await loadVisits(url));
+  } catch (err) {
+    visitsEl.replaceChildren(el('p', 'error', 'Could not read history.'));
+    console.debug('Form Inspector: history read failed', err);
+    return;
+  }
+
+  visitsEl.replaceChildren();
+
+  if (visits.length === 0) {
+    visitsEl.appendChild(el('p', 'empty', 'No recorded visits for this exact URL.'));
+    return;
+  }
+
+  const sorted = [...visits].sort((a, b) => b.visitTime - a.visitTime);
+  const total = item ? item.visitCount : visits.length;
+  visitsEl.appendChild(el('p', 'summary',
+    `${total} visit${total === 1 ? '' : 's'} · first ${formatWhen(sorted[sorted.length - 1].visitTime)} · last ${formatWhen(sorted[0].visitTime)}`));
+
+  const list = el('ul', 'visits');
+  sorted.slice(0, 20).forEach((visit) => list.appendChild(visitRow(visit)));
+  visitsEl.appendChild(list);
+
+  if (sorted.length > 20) {
+    visitsEl.appendChild(el('p', 'summary', `Showing the 20 most recent of ${sorted.length}.`));
+  }
+}
+
 async function main() {
   const tab = await getActiveTab();
   if (!tab || !tab.url) {
@@ -111,14 +183,18 @@ async function main() {
   }
   urlEl.textContent = tab.url;
 
-  try {
-    const { forms } = await scanForms(tab.id);
-    renderForms(forms);
-    wireHighlighting(tab.id);
-  } catch (err) {
-    formsEl.replaceChildren(el('p', 'error', CANNOT_INJECT));
-    console.debug('Form Inspector: injection failed', err);
-  }
+  const forms = (async () => {
+    try {
+      const result = await scanForms(tab.id);
+      renderForms(result.forms);
+      wireHighlighting(tab.id);
+    } catch (err) {
+      formsEl.replaceChildren(el('p', 'error', CANNOT_INJECT));
+      console.debug('Form Inspector: injection failed', err);
+    }
+  })();
+
+  await Promise.all([forms, renderVisits(tab.url)]);
 }
 
 main();
