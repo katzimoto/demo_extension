@@ -9,25 +9,25 @@ const { extractForms } = require('../src/lib/form-extractor.js');
 
 const FORMS = [{ index: 0, id: 'f', name: '', action: '/x', method: 'get', fieldCount: 0, fields: [] }];
 
-test('includes url when collectUrl is true', () => {
+test('includes url when includeUrl is true', () => {
   const payload = buildPayload(FORMS, 'https://example.com/a', 123, {
-    enabled: true, collectUrl: true, minIntervalMs: 0,
+    enabled: true, includeUrl: true, minIntervalMs: 0,
   });
   assert.equal(payload.url, 'https://example.com/a');
   assert.equal(payload.sentAt, 123);
   assert.deepEqual(payload.forms, FORMS);
 });
 
-test('omits url entirely when collectUrl is false', () => {
+test('omits url entirely when includeUrl is false', () => {
   const payload = buildPayload(FORMS, 'https://example.com/a', 123, {
-    enabled: true, collectUrl: false, minIntervalMs: 0,
+    enabled: true, includeUrl: false, minIntervalMs: 0,
   });
   assert.ok(!('url' in payload), 'url key must be absent, not undefined');
   assert.deepEqual(Object.keys(payload).sort(), ['forms', 'sentAt']);
 });
 
 test('a missing or malformed config omits the url', () => {
-  for (const config of [undefined, null, {}, { collectUrl: 'true' }]) {
+  for (const config of [undefined, null, {}, { includeUrl: 'true' }]) {
     const payload = buildPayload(FORMS, 'https://example.com/a', 1, config);
     assert.ok(!('url' in payload), `config ${JSON.stringify(config)}`);
   }
@@ -35,7 +35,7 @@ test('a missing or malformed config omits the url', () => {
 
 test('FIXED SHAPE: no config value can add a key', () => {
   const hostile = normalizeConfig({
-    enabled: true, collectUrl: true, minIntervalMs: 0,
+    enabled: true, includeUrl: true, minIntervalMs: 0,
     collectValues: true, includeCookies: true, extraFields: ['password'],
   });
   const payload = buildPayload(FORMS, 'https://example.com/a', 1, hostile);
@@ -44,7 +44,7 @@ test('FIXED SHAPE: no config value can add a key', () => {
 
 test('FIXED SHAPE: raw unnormalised config cannot add a key either', () => {
   const payload = buildPayload(FORMS, 'https://example.com/a', 1, {
-    collectUrl: true, collectValues: true, secrets: 'yes',
+    includeUrl: true, collectValues: true, secrets: 'yes',
   });
   assert.deepEqual(Object.keys(payload).sort(), ['forms', 'sentAt', 'url']);
 });
@@ -64,7 +64,7 @@ test('CROSS-MODULE GUARD: typed input never reaches the payload', () => {
 
   const { forms } = extractForms(doc);
   const payload = buildPayload(forms, 'https://example.com/login', 1, {
-    enabled: true, collectUrl: true, minIntervalMs: 0,
+    enabled: true, includeUrl: true, minIntervalMs: 0,
   });
 
   const wire = JSON.stringify(payload);
@@ -78,6 +78,6 @@ test('CROSS-MODULE GUARD: typed input never reaches the payload', () => {
 
 test('forms are passed through by reference without mutation', () => {
   const original = JSON.parse(JSON.stringify(FORMS));
-  buildPayload(FORMS, 'https://example.com/a', 1, { collectUrl: true });
+  buildPayload(FORMS, 'https://example.com/a', 1, { includeUrl: true });
   assert.deepEqual(FORMS, original);
 });

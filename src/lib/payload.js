@@ -6,7 +6,7 @@
 // that can turn collection off, not one that can widen it.
 function buildPayload(forms, url, now, config) {
   const payload = { sentAt: now, forms };
-  if (config && config.collectUrl === true) {
+  if (config && config.includeUrl === true) {
     payload.url = url;
   }
   return payload;
