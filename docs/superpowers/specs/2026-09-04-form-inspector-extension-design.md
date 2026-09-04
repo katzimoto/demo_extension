@@ -26,6 +26,13 @@ such a page shows "No forms on this page." This is a deliberate position, not
 an oversight: `allFrames` would widen the injection surface and require the
 descriptor/cache index model to become frame-aware.
 
+## Egress
+
+This extension sends form structure to a configurable collector server. See
+`docs/superpowers/specs/2026-09-04-collector-server-design.md`. Typed field
+values and visit history are never sent; the payload shape is fixed in client
+code and no server config can widen it.
+
 ## Non-goals
 
 Explicitly excluded, decided during design:
@@ -48,7 +55,11 @@ The inspector is injected on demand by the popup via
 Consequences:
 
 - No `host_permissions`, no `<all_urls>`. The extension has access to a tab
-  only after you click its icon, and only to that tab.
+  only after you click its icon, and only to that tab. Since the collector was
+  added it also declares `optional_host_permissions`, which grants nothing
+  until the user approves a specific origin at runtime — Chrome names that
+  exact origin in its prompt. See
+  `docs/superpowers/specs/2026-09-04-collector-server-design.md`.
 - Nothing runs on pages you never inspect.
 - The injected script persists for the life of that tab's page, so
   hover-to-highlight works after the initial scan without re-injecting.
@@ -68,6 +79,7 @@ popup is closed, so the extension declares no background worker.
 | `activeTab` | Read the active tab's URL and inject into it, on user gesture |
 | `scripting` | `chrome.scripting.executeScript` |
 | `history`   | `chrome.history.getVisits` |
+| `storage`   | Persist the collector endpoint and per-URL send timestamps |
 
 ## File layout
 
