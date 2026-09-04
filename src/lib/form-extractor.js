@@ -1,6 +1,7 @@
 'use strict';
 
 const CONTROL_TAGS = new Set(['input', 'select', 'textarea', 'button']);
+const VALUE_TYPES = new Set(['radio', 'checkbox']);
 
 function formControls(form) {
   return Array.from(form.elements).filter(
@@ -73,10 +74,11 @@ function resolveLabel(el, doc) {
 
 function describeField(el, index, doc) {
   const { label, labelSource } = resolveLabel(el, doc);
-  return {
+  const type = fieldType(el);
+  const field = {
     index,
     tag: el.tagName.toLowerCase(),
-    type: fieldType(el),
+    type,
     name: el.getAttribute('name') || '',
     id: el.getAttribute('id') || '',
     label,
@@ -84,6 +86,10 @@ function describeField(el, index, doc) {
     required: el.hasAttribute('required'),
     disabled: el.hasAttribute('disabled'),
   };
+  if (VALUE_TYPES.has(type)) {
+    field.value = el.getAttribute('value') || '';
+  }
+  return field;
 }
 
 function describeForm(form, index, doc) {

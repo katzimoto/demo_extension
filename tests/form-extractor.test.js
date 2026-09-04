@@ -194,3 +194,89 @@ test('aria-label that is only whitespace falls through to the next source', () =
   assert.equal(f.label, 'Fallback');
   assert.equal(f.labelSource, 'placeholder');
 });
+
+test('select reports select-one or select-multiple', () => {
+  const doc = docFrom(`
+    <form>
+      <select name="one"><option>a</option></select>
+      <select name="many" multiple><option>a</option></select>
+    </form>
+  `);
+  const { fields } = extractForms(doc).forms[0];
+  assert.equal(fields[0].type, 'select-one');
+  assert.equal(fields[1].type, 'select-multiple');
+  assert.equal(fields[0].tag, 'select');
+});
+
+test('textarea reports tag and type textarea', () => {
+  const f = firstField('<form><textarea name="bio"></textarea></form>');
+  assert.equal(f.tag, 'textarea');
+  assert.equal(f.type, 'textarea');
+});
+
+test('button type defaults to submit', () => {
+  const doc = docFrom('<form><button>Go</button><button type="RESET">Clear</button></form>');
+  const { fields } = extractForms(doc).forms[0];
+  assert.equal(fields[0].type, 'submit');
+  assert.equal(fields[1].type, 'reset');
+  assert.equal(fields[0].tag, 'button');
+});
+
+test('a radio group shares a name and is distinguished by value', () => {
+  const doc = docFrom(`
+    <form>
+      <label>Yes <input type="radio" name="ok" value="y"></label>
+      <label>No <input type="radio" name="ok" value="n"></label>
+    </form>
+  `);
+  const { fields } = extractForms(doc).forms[0];
+  assert.equal(fields.length, 2);
+  assert.deepEqual(fields.map((f) => f.name), ['ok', 'ok']);
+  assert.deepEqual(fields.map((f) => f.value), ['y', 'n']);
+  assert.deepEqual(fields.map((f) => f.label), ['Yes', 'No']);
+});
+
+test('checkbox exposes its authored value', () => {
+  const f = firstField('<form><input type="checkbox" name="tos" value="accepted"></form>');
+  assert.equal(f.value, 'accepted');
+});
+
+test('a radio with no value attribute reports an empty string', () => {
+  const f = firstField('<form><input type="radio" name="r"></form>');
+  assert.equal(f.value, '');
+});
+
+test('text inputs carry no value key at all', () => {
+  const f = firstField('<form><input type="text" name="q" value="preset"></form>');
+  assert.ok(!('value' in f));
+});
+
+test('hidden inputs are listed but expose no value', () => {
+  const f = firstField('<form><input type="hidden" name="csrf" value="s3cr3t"></form>');
+  assert.equal(f.type, 'hidden');
+  assert.equal(f.name, 'csrf');
+  assert.ok(!('value' in f));
+});
+
+test('REGRESSION GUARD: typed input is never exposed', () => {
+  const dom = new JSDOM('<form><input type="text" name="q"><textarea name="b"></textarea></form>');
+  const doc = dom.window.document;
+  doc.querySelector('input').value = 'typed secret';
+  doc.querySelector('textarea').value = 'typed secret';
+  const { fields } = extractForms(doc).forms[0];
+  for (const field of fields) {
+    assert.ok(!('value' in field), `${field.name} must not carry a value key`);
+  }
+  assert.ok(!JSON.stringify(fields).includes('typed secret'));
+});
+
+test('REGRESSION GUARD: a checked radio reports the authored value, not the live state', () => {
+  const dom = new JSDOM('<form><input type="radio" name="r" value="authored"></form>');
+  const doc = dom.window.document;
+  const radio = doc.querySelector('input');
+  radio.checked = true;
+  radio.value = 'mutated at runtime';
+  const f = extractForms(doc).forms[0].fields[0];
+  assert.equal(f.value, 'authored');
+  assert.ok(!('checked' in f));
+});
