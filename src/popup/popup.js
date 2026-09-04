@@ -122,7 +122,14 @@ function wireHighlighting(tabId) {
 
 async function getEndpoint() {
   const stored = await chrome.storage.local.get('endpoint');
-  return stored.endpoint || DEFAULT_ENDPOINT;
+  const endpoint = stored.endpoint || DEFAULT_ENDPOINT;
+  try {
+    new URL(endpoint);
+  } catch {
+    console.warn('Form Inspector: stored endpoint is not a URL, using default', endpoint);
+    return DEFAULT_ENDPOINT;
+  }
+  return endpoint;
 }
 
 function originPattern(endpoint) {
@@ -163,9 +170,20 @@ function renderConnect(endpoint) {
 }
 
 async function syncToServer(url, forms) {
-  const endpoint = await getEndpoint();
+  let endpoint;
+  let granted;
+  try {
+    endpoint = await getEndpoint();
+    granted = await hasOriginAccess(endpoint);
+  } catch (err) {
+    collectorEl.replaceChildren(
+      el('p', 'error', 'Could not read collector settings.')
+    );
+    console.warn('Form Inspector: collector setup failed', err);
+    return;
+  }
 
-  if (!(await hasOriginAccess(endpoint))) {
+  if (!granted) {
     renderConnect(endpoint);
     return;
   }
@@ -190,7 +208,16 @@ async function syncToServer(url, forms) {
   }
 
   const now = Date.now();
-  const previous = await lastSentAt(url);
+  let previous;
+  try {
+    previous = await lastSentAt(url);
+  } catch (err) {
+    collectorEl.replaceChildren(
+      el('p', 'error', 'Could not read collector settings.')
+    );
+    console.warn('Form Inspector: collector setup failed', err);
+    return;
+  }
   if (config.minIntervalMs > 0 && now - previous < config.minIntervalMs) {
     const wait = Math.ceil((config.minIntervalMs - (now - previous)) / 1000);
     collectorEl.replaceChildren(
@@ -313,10 +340,15 @@ async function main() {
     try {
       renderForms(result.forms);
       wireHighlighting(tab.id);
-      await syncToServer(tab.url, result.forms);
     } catch (err) {
       formsEl.replaceChildren(el('p', 'error', 'Could not render the form list.'));
       console.error('Form Inspector: render failed', err);
+    }
+    try {
+      await syncToServer(tab.url, result.forms);
+    } catch (err) {
+      collectorEl.replaceChildren(el('p', 'error', 'Collector sync failed.'));
+      console.error('Form Inspector: sync failed', err);
     }
   })();
 
