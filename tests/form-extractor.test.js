@@ -95,3 +95,84 @@ test('fields associated by the form attribute are included', () => {
   assert.equal(fields.length, 1);
   assert.equal(fields[0].name, 'outside');
 });
+
+function firstField(html) {
+  return extractForms(docFrom(html)).forms[0].fields[0];
+}
+
+test('label resolves from label[for]', () => {
+  const f = firstField('<form><label for="e">Email address</label><input id="e"></form>');
+  assert.equal(f.label, 'Email address');
+  assert.equal(f.labelSource, 'for');
+});
+
+test('label resolves from a wrapping label', () => {
+  const f = firstField('<form><label>Full name <input name="n"></label></form>');
+  assert.equal(f.label, 'Full name');
+  assert.equal(f.labelSource, 'wrap');
+});
+
+test('a wrapping label excludes text of nested controls', () => {
+  const f = firstField(
+    '<form><label>Country <select name="c"><option>Norway</option></select></label></form>'
+  );
+  assert.equal(f.label, 'Country');
+  assert.equal(f.labelSource, 'wrap');
+});
+
+test('aria-label outranks a wrapping label', () => {
+  const f = firstField('<form><label>Visible <input aria-label="Announced"></label></form>');
+  assert.equal(f.label, 'Announced');
+  assert.equal(f.labelSource, 'aria-label');
+});
+
+test('aria-labelledby outranks a present label[for]', () => {
+  const f = firstField(`
+    <form>
+      <span id="t">From ARIA</span>
+      <label for="e">From label</label>
+      <input id="e" aria-labelledby="t">
+    </form>
+  `);
+  assert.equal(f.label, 'From ARIA');
+  assert.equal(f.labelSource, 'aria-labelledby');
+});
+
+test('aria-labelledby joins multiple referenced elements in order', () => {
+  const f = firstField(`
+    <form>
+      <span id="a">Billing</span><span id="b">address</span>
+      <input aria-labelledby="a b">
+    </form>
+  `);
+  assert.equal(f.label, 'Billing address');
+});
+
+test('aria-labelledby pointing at a missing id falls through', () => {
+  const f = firstField('<form><input aria-labelledby="nope" placeholder="Search"></form>');
+  assert.equal(f.label, 'Search');
+  assert.equal(f.labelSource, 'placeholder');
+});
+
+test('placeholder is the last resort before none', () => {
+  const f = firstField('<form><input placeholder="Search here"></form>');
+  assert.equal(f.label, 'Search here');
+  assert.equal(f.labelSource, 'placeholder');
+});
+
+test('a field with nothing to label it reports none', () => {
+  const f = firstField('<form><input name="bare"></form>');
+  assert.equal(f.label, null);
+  assert.equal(f.labelSource, 'none');
+});
+
+test('label text is whitespace-collapsed', () => {
+  const f = firstField('<form><label for="e">  Email\n   address </label><input id="e"></form>');
+  assert.equal(f.label, 'Email address');
+});
+
+test('an empty label element falls through to the next source', () => {
+  const f = firstField('<form><label for="e"></label><input id="e" placeholder="Fallback"></form>');
+  assert.equal(f.label, 'Fallback');
+  assert.equal(f.labelSource, 'placeholder');
+});

@@ -16,22 +16,74 @@ function fieldType(el) {
   return (el.getAttribute('type') || 'text').toLowerCase();
 }
 
-function describeField(el, index) {
+function textOf(el) {
+  return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+}
+
+function wrappingLabelText(label) {
+  const clone = label.cloneNode(true);
+  clone.querySelectorAll('input, select, textarea, button').forEach((n) => n.remove());
+  return textOf(clone);
+}
+
+function labelForId(doc, id) {
+  if (!id) return null;
+  for (const label of doc.querySelectorAll('label[for]')) {
+    if (label.getAttribute('for') === id) return label;
+  }
+  return null;
+}
+
+function resolveLabel(el, doc) {
+  const labelledBy = el.getAttribute('aria-labelledby');
+  if (labelledBy) {
+    const text = labelledBy
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((id) => textOf(doc.getElementById(id)))
+      .filter(Boolean)
+      .join(' ');
+    if (text) return { label: text, labelSource: 'aria-labelledby' };
+  }
+
+  const ariaLabel = (el.getAttribute('aria-label') || '').trim();
+  if (ariaLabel) return { label: ariaLabel, labelSource: 'aria-label' };
+
+  const forLabel = labelForId(doc, el.getAttribute('id'));
+  if (forLabel) {
+    const text = textOf(forLabel);
+    if (text) return { label: text, labelSource: 'for' };
+  }
+
+  const wrapping = el.closest('label');
+  if (wrapping) {
+    const text = wrappingLabelText(wrapping);
+    if (text) return { label: text, labelSource: 'wrap' };
+  }
+
+  const placeholder = (el.getAttribute('placeholder') || '').trim();
+  if (placeholder) return { label: placeholder, labelSource: 'placeholder' };
+
+  return { label: null, labelSource: 'none' };
+}
+
+function describeField(el, index, doc) {
+  const { label, labelSource } = resolveLabel(el, doc);
   return {
     index,
     tag: el.tagName.toLowerCase(),
     type: fieldType(el),
     name: el.getAttribute('name') || '',
     id: el.getAttribute('id') || '',
-    label: null,
-    labelSource: 'none',
+    label,
+    labelSource,
     required: el.hasAttribute('required'),
     disabled: el.hasAttribute('disabled'),
   };
 }
 
-function describeForm(form, index) {
-  const fields = formControls(form).map((el, i) => describeField(el, i));
+function describeForm(form, index, doc) {
+  const fields = formControls(form).map((el, i) => describeField(el, i, doc));
   return {
     index,
     id: form.getAttribute('id') || '',
@@ -44,7 +96,7 @@ function describeForm(form, index) {
 }
 
 function extractForms(doc) {
-  return { forms: Array.from(doc.forms).map(describeForm) };
+  return { forms: Array.from(doc.forms).map((form, i) => describeForm(form, i, doc)) };
 }
 
 if (typeof module !== 'undefined' && module.exports) {
