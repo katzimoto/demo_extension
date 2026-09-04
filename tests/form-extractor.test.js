@@ -177,6 +177,29 @@ test('an empty label element falls through to the next source', () => {
   assert.equal(f.labelSource, 'placeholder');
 });
 
+test('an empty wrapping label falls through to the next source', () => {
+  const f = firstField('<form><label><input placeholder="Fallback"></label></form>');
+  assert.equal(f.label, 'Fallback');
+  assert.equal(f.labelSource, 'placeholder');
+});
+
+test('labelForId matches an id containing CSS-special characters', () => {
+  const f = firstField('<form><label for="a[0]">Indexed</label><input id="a[0]"></form>');
+  assert.equal(f.label, 'Indexed');
+  assert.equal(f.labelSource, 'for');
+});
+
+test('aria-labelledby pointing at a whitespace-only element falls through', () => {
+  const f = firstField(`
+    <form>
+      <span id="t">   </span>
+      <input aria-labelledby="t" placeholder="Fallback">
+    </form>
+  `);
+  assert.equal(f.label, 'Fallback');
+  assert.equal(f.labelSource, 'placeholder');
+});
+
 test('aria-label with multiple spaces and newlines collapses to single spaces', () => {
   const f = firstField('<form><input aria-label="Full   Name\n  Here"></form>');
   assert.equal(f.label, 'Full Name Here');
@@ -270,7 +293,7 @@ test('REGRESSION GUARD: typed input is never exposed', () => {
   assert.ok(!JSON.stringify(fields).includes('typed secret'));
 });
 
-test('REGRESSION GUARD: checking a radio changes neither its reported value nor exposes checked state', () => {
+test('REGRESSION GUARD: checked state is never exposed', () => {
   const dom = new JSDOM('<form><input type="radio" name="r" value="authored"></form>');
   const doc = dom.window.document;
   const radio = doc.querySelector('input');

@@ -5,6 +5,7 @@
   --line: #e3e3e3;
   --accent: #b8860b;
   --hit: #fff6dd;
+  --err: #b3261e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -15,6 +16,7 @@
     --line: #3a3a3a;
     --accent: #e0a92a;
     --hit: #3a3320;
+    --err: #ff6b60;
   }
 }
 
@@ -43,7 +45,7 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: v
 
 .panel { border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
 .empty { color: var(--muted); font-style: italic; }
-.error { color: var(--accent); }
+.error { color: var(--err); }
 
 .form-block { border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 8px; }
 .form-block:last-child { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }

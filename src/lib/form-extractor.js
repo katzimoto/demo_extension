@@ -1,7 +1,9 @@
 'use strict';
 
-const CONTROL_TAGS = new Set(['input', 'select', 'textarea', 'button']);
-const VALUE_TYPES = new Set(['radio', 'checkbox']);
+// `var`, not `const`, so re-injection into a surviving isolated world (e.g.
+// after an extension reload) cannot throw a redeclaration SyntaxError.
+var CONTROL_TAGS = new Set(['input', 'select', 'textarea', 'button']);
+var VALUE_TYPES = new Set(['radio', 'checkbox']);
 
 function formControls(form) {
   return Array.from(form.elements).filter(
@@ -13,6 +15,9 @@ function fieldType(el) {
   const tag = el.tagName.toLowerCase();
   if (tag === 'select') return el.multiple ? 'select-multiple' : 'select-one';
   if (tag === 'textarea') return 'textarea';
+  // A button's `type` attribute is not validated against the button enum, so
+  // invalid markup like `<button type="radio">` classifies as `radio` here.
+  // Deliberate, and harmless: a button's `value` is always authored markup.
   if (tag === 'button') return (el.getAttribute('type') || 'submit').toLowerCase();
   return (el.getAttribute('type') || 'text').toLowerCase();
 }

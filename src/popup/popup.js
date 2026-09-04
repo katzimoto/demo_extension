@@ -11,7 +11,8 @@ async function getActiveTab() {
 
 const CANNOT_INJECT =
   'This page cannot be inspected. Chrome blocks extensions on browser pages ' +
-  '(chrome://, the Web Store, and the PDF viewer).';
+  '(chrome://, the Web Store, and the PDF viewer), or local files unless you ' +
+  "enable 'Allow access to file URLs' for this extension.";
 
 // Ping the content script before injecting. form-extractor.js declares its
 // lookup sets as top-level `const`s, which live in the isolated world's
@@ -85,9 +86,12 @@ function wireHighlighting(tabId) {
     chrome.tabs.sendMessage(tabId, message).catch(() => {});
   };
 
+  let current = null;
+
   formsEl.addEventListener('mouseover', (event) => {
     const li = event.target.closest('li[data-field-index]');
-    if (!li) return;
+    if (!li || li === current) return;
+    current = li;
     const block = li.closest('[data-form-index]');
     send({
       type: 'highlight',
@@ -97,10 +101,19 @@ function wireHighlighting(tabId) {
   });
 
   formsEl.addEventListener('mouseout', (event) => {
-    if (event.target.closest('li[data-field-index]')) send({ type: 'clearHighlight' });
+    const li = event.target.closest('li[data-field-index]');
+    if (!li) return;
+    // Still inside the same row (padding/gap crossed a child boundary) —
+    // not a real exit, so don't clear-and-redraw.
+    if (li.contains(event.relatedTarget)) return;
+    current = null;
+    send({ type: 'clearHighlight' });
   });
 
-  window.addEventListener('pagehide', () => send({ type: 'clearHighlight' }));
+  window.addEventListener('pagehide', () => {
+    current = null;
+    send({ type: 'clearHighlight' });
+  });
 }
 
 const TRANSITION_LABELS = {
@@ -134,56 +147,67 @@ function visitRow(visit) {
 }
 
 async function renderVisits(url) {
-  let visits;
   try {
-    visits = await chrome.history.getVisits({ url });
+    const visits = await chrome.history.getVisits({ url });
+
+    visitsEl.replaceChildren();
+
+    if (visits.length === 0) {
+      visitsEl.appendChild(el('p', 'empty', 'No recorded visits for this exact URL.'));
+      return;
+    }
+
+    const sorted = [...visits].sort((a, b) => b.visitTime - a.visitTime);
+    const total = visits.length;
+    visitsEl.appendChild(el('p', 'summary',
+      `${total} visit${total === 1 ? '' : 's'} · first ${formatWhen(sorted[sorted.length - 1].visitTime)} · last ${formatWhen(sorted[0].visitTime)}`));
+
+    const list = el('ul', 'visits');
+    sorted.slice(0, 20).forEach((visit) => list.appendChild(visitRow(visit)));
+    visitsEl.appendChild(list);
+
+    if (sorted.length > 20) {
+      visitsEl.appendChild(el('p', 'summary', `Showing the 20 most recent of ${sorted.length}.`));
+    }
   } catch (err) {
     visitsEl.replaceChildren(el('p', 'error', 'Could not read history.'));
-    console.debug('Form Inspector: history read failed', err);
-    return;
-  }
-
-  visitsEl.replaceChildren();
-
-  if (visits.length === 0) {
-    visitsEl.appendChild(el('p', 'empty', 'No recorded visits for this exact URL.'));
-    return;
-  }
-
-  const sorted = [...visits].sort((a, b) => b.visitTime - a.visitTime);
-  const total = visits.length;
-  visitsEl.appendChild(el('p', 'summary',
-    `${total} visit${total === 1 ? '' : 's'} · first ${formatWhen(sorted[sorted.length - 1].visitTime)} · last ${formatWhen(sorted[0].visitTime)}`));
-
-  const list = el('ul', 'visits');
-  sorted.slice(0, 20).forEach((visit) => list.appendChild(visitRow(visit)));
-  visitsEl.appendChild(list);
-
-  if (sorted.length > 20) {
-    visitsEl.appendChild(el('p', 'summary', `Showing the 20 most recent of ${sorted.length}.`));
+    console.warn('Form Inspector: history read failed', err);
   }
 }
 
 async function main() {
   const tab = await getActiveTab();
-  if (!tab || !tab.url) {
+  if (!tab) {
     urlEl.textContent = 'No active tab.';
+    return;
+  }
+  if (!tab.url) {
+    urlEl.textContent = 'Active tab has no URL.';
     return;
   }
   urlEl.textContent = tab.url;
 
   const forms = (async () => {
+    let result;
     try {
-      const result = await scanForms(tab.id);
+      result = await scanForms(tab.id);
+    } catch (err) {
+      formsEl.replaceChildren(el('p', 'error', CANNOT_INJECT));
+      console.warn('Form Inspector: scan failed', err);
+      return;
+    }
+    try {
       renderForms(result.forms);
       wireHighlighting(tab.id);
     } catch (err) {
-      formsEl.replaceChildren(el('p', 'error', CANNOT_INJECT));
-      console.debug('Form Inspector: injection failed', err);
+      formsEl.replaceChildren(el('p', 'error', 'Could not render the form list.'));
+      console.error('Form Inspector: render failed', err);
     }
   })();
 
   await Promise.all([forms, renderVisits(tab.url)]);
 }
 
-main();
+main().catch((err) => {
+  console.error('Form Inspector: popup failed', err);
+});
