@@ -213,14 +213,22 @@ On open:
 Steps 3 and 4 run concurrently; neither section blocks the other's render.
 
 **Visits section.** `chrome.history.getVisits({url})` returns visit records
-with `visitTime` and `transition`. `chrome.history.search({text: url,
-startTime: 0})` supplies `title` and `visitCount` — `search` matches
-substrings across URL and title, so results are filtered to an exact URL
-match before use.
+with `visitTime` and `transition`. That single call is the whole data source.
+
+`chrome.history.search` is deliberately NOT used. It was originally specified
+here to supply `title` and `visitCount`, but the title was never rendered, and
+`visitCount` is a separately maintained counter that can diverge from the
+visit rows `getVisits` returns (partial history clearing, storage expiry,
+subframe navigations). Using it would let the summary line report a total that
+contradicts the list rendered directly beneath it. `search` also matches
+substrings across URL and title under a result cap, so the exact-match entry
+can be evicted for a URL that is a common substring — making which total you
+see depend on search-ranking noise. The count comes from `visits.length`, so
+the summary and the list are the same data by construction.
 
 Displayed: total visit count, first visit, last visit, and the 20 most
-recent visits with timestamp and transition type. Visits with transition
-`form_submit` are visually distinguished.
+recent visits with timestamp and transition type, with a note when there are
+more than 20. Visits with transition `form_submit` are visually distinguished.
 
 ## Error and empty states
 
