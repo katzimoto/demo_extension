@@ -14,15 +14,17 @@ const CANNOT_INJECT =
   '(chrome://, the Web Store, and the PDF viewer), or local files unless you ' +
   "enable 'Allow access to file URLs' for this extension.";
 
-// Ping the content script before injecting. form-extractor.js declares its
-// lookup sets as top-level `const`s, which live in the isolated world's
-// shared global lexical environment; re-running executeScript on a tab that
-// already has the script loaded throws a redeclaration SyntaxError before
-// inspector.js's own re-injection guard ever runs. Sending `scan` first and
-// only falling back to executeScript when that rejects (no listener yet, or
-// the world was torn down by a navigation) avoids ever re-injecting into a
-// frame that's still alive. Do not "simplify" this back to an unconditional
-// executeScript.
+// Ping the content script before injecting: on a tab that already has the
+// inspector, this avoids re-running both files on every popup open.
+//
+// This was originally a correctness guard. form-extractor.js declared its
+// lookup sets as top-level `const`s, so re-injecting into a surviving isolated
+// world threw a redeclaration SyntaxError. That hazard is now fixed at the
+// source — the sets are `var` (redeclarable), and inspector.js re-registers its
+// listener instead of returning early, which is also what lets a tab recover
+// after an extension reload orphans its listener. So ping-first is an
+// optimisation now rather than load-bearing. Keep it anyway: re-injecting on
+// every popup open is pure waste.
 async function scanForms(tabId) {
   try {
     return await chrome.tabs.sendMessage(tabId, { type: 'scan' });
