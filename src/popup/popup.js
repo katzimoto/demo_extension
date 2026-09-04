@@ -13,12 +13,25 @@ const CANNOT_INJECT =
   'This page cannot be inspected. Chrome blocks extensions on browser pages ' +
   '(chrome://, the Web Store, and the PDF viewer).';
 
+// Ping the content script before injecting. form-extractor.js declares its
+// lookup sets as top-level `const`s, which live in the isolated world's
+// shared global lexical environment; re-running executeScript on a tab that
+// already has the script loaded throws a redeclaration SyntaxError before
+// inspector.js's own re-injection guard ever runs. Sending `scan` first and
+// only falling back to executeScript when that rejects (no listener yet, or
+// the world was torn down by a navigation) avoids ever re-injecting into a
+// frame that's still alive. Do not "simplify" this back to an unconditional
+// executeScript.
 async function scanForms(tabId) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: ['lib/form-extractor.js', 'content/inspector.js'],
-  });
-  return chrome.tabs.sendMessage(tabId, { type: 'scan' });
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: 'scan' });
+  } catch {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['lib/form-extractor.js', 'content/inspector.js'],
+    });
+    return chrome.tabs.sendMessage(tabId, { type: 'scan' });
+  }
 }
 
 function el(tag, className, text) {
