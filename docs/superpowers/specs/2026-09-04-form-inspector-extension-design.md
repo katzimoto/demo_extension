@@ -138,8 +138,17 @@ descriptor indices and cached elements aligned by construction.
 | `value` | **Only** for `radio` and `checkbox`, and only the authored `value` attribute. Absent on every other type. |
 
 The `value` restriction is the mechanical guarantee behind the "never show
-typed values" non-goal: radio and checkbox `value` is markup the page author
-wrote, never user input.
+typed values" non-goal: radio and checkbox `value` is page data, never user
+input. A user cannot type into a radio or a checkbox — the only thing they can
+do is check it, and `checked` state is never part of a descriptor.
+
+Note one thing this does *not* claim. For `radio` and `checkbox` the `value`
+IDL attribute is in "default/on" mode, meaning it reflects the content
+attribute, so page script assigning `el.value` also rewrites the attribute
+`getAttribute('value')` reads. The guarantee is about user input, not about
+immunity to script. For text-like inputs the IDL attribute is in "value" mode
+and assigning `.value` leaves the content attribute untouched — which is why
+reading the attribute keeps typed text out of the descriptor.
 
 Hidden inputs are listed (name and type) but their values are not exposed —
 they routinely carry CSRF tokens.
