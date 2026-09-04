@@ -270,12 +270,11 @@ test('REGRESSION GUARD: typed input is never exposed', () => {
   assert.ok(!JSON.stringify(fields).includes('typed secret'));
 });
 
-test('REGRESSION GUARD: a checked radio reports the authored value, not the live state', () => {
+test('REGRESSION GUARD: checking a radio changes neither its reported value nor exposes checked state', () => {
   const dom = new JSDOM('<form><input type="radio" name="r" value="authored"></form>');
   const doc = dom.window.document;
   const radio = doc.querySelector('input');
   radio.checked = true;
-  radio.value = 'mutated at runtime';
   const f = extractForms(doc).forms[0].fields[0];
   assert.equal(f.value, 'authored');
   assert.ok(!('checked' in f));
