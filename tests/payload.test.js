@@ -55,6 +55,7 @@ test('CROSS-MODULE GUARD: typed input never reaches the payload', () => {
       <label for="e">Email</label><input type="email" name="email" id="e">
       <input type="password" name="pw">
       <textarea name="note"></textarea>
+      <label>Accept <input type="checkbox" name="tos" value="yes"></label>
     </form>
   `);
   const doc = dom.window.document;
@@ -71,8 +72,12 @@ test('CROSS-MODULE GUARD: typed input never reaches the payload', () => {
   assert.ok(!wire.includes('victim@example.com'));
   assert.ok(!wire.includes('hunter2'));
   assert.ok(!wire.includes('private note'));
+  const tos = payload.forms[0].fields.find((f) => f.name === 'tos');
+  assert.equal(tos.value, 'yes', 'the authored value attribute travels');
   for (const field of payload.forms[0].fields) {
-    assert.ok(!('value' in field), `${field.name} must carry no value key`);
+    if (field.type !== 'checkbox' && field.type !== 'radio') {
+      assert.ok(!('value' in field), `${field.name} must carry no value key`);
+    }
   }
 });
 

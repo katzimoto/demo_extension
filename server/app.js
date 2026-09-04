@@ -125,8 +125,11 @@ function createServer(store) {
         json(res, 405, { ok: false, error: 'method not allowed' });
         return;
       }
-      handleCollect(req, res, store).catch(() => {
-        json(res, 400, { ok: false, error: 'could not process request' });
+      handleCollect(req, res, store).catch((err) => {
+        console.error('collect failed', err);
+        if (!res.headersSent) {
+          json(res, 400, { ok: false, error: 'could not process request' });
+        }
       });
       return;
     }

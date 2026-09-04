@@ -24,6 +24,20 @@ function normalizeConfig(raw) {
   };
 }
 
+// Whether a send made `previous` ms ago should be throttled at time `now`,
+// given a `minIntervalMs` window. Guards against a backwards clock: if
+// `previous` is somehow in the future (clock skew, storage from a future
+// session), `now - previous` goes negative and must not be treated as "still
+// inside the window" — that would wedge the throttle with a countdown that
+// never clears.
+function shouldThrottle(now, previous, minIntervalMs) {
+  if (minIntervalMs <= 0) return false;
+  if (!Number.isFinite(previous) || previous <= 0) return false;
+  const elapsed = now - previous;
+  if (elapsed < 0) return false; // clock moved backwards; do not wedge
+  return elapsed < minIntervalMs;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { normalizeConfig, DEFAULT_MIN_INTERVAL_MS };
+  module.exports = { normalizeConfig, DEFAULT_MIN_INTERVAL_MS, shouldThrottle };
 }

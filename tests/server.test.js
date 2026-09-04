@@ -51,7 +51,7 @@ test('stores are independent', () => {
   assert.equal(b.size, 0);
 });
 
-const { createServer } = require('../server/app.js');
+const { createServer, MAX_BODY_BYTES } = require('../server/app.js');
 
 async function withServer(run) {
   const store = createStore();
@@ -144,7 +144,9 @@ test('malformed bodies are rejected with 400', async () => {
     const post = (body) => fetch(`${base}/collect`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
     });
-    assert.equal((await post('not json')).status, 400);
+    const bad = await post('not json');
+    assert.equal(bad.status, 400);
+    assert.equal(typeof (await bad.json()).error, 'string');
     assert.equal((await post('[]')).status, 400);
     assert.equal((await post('null')).status, 400);
     assert.equal((await post(JSON.stringify({ sentAt: 1 }))).status, 400);
@@ -168,7 +170,7 @@ test('a form that is not an object is rejected', async () => {
       body: JSON.stringify({ sentAt: 1, forms }),
     });
     assert.equal((await post([null])).status, 400);
-    assert.equal((await post([undefined])).status, 400);
+    assert.equal((await post([true])).status, 400);
     assert.equal((await post(['nope'])).status, 400);
     assert.equal((await post([42])).status, 400);
     assert.equal((await post([[]])).status, 400);
@@ -208,7 +210,7 @@ test('wrong methods get 405', async () => {
 
 test('an oversized body gets 413', async () => {
   await withServer(async (base) => {
-    const huge = JSON.stringify({ sentAt: 1, forms: [], pad: 'x'.repeat(1024 * 1024 + 16) });
+    const huge = JSON.stringify({ sentAt: 1, forms: [], pad: 'x'.repeat(MAX_BODY_BYTES + 16) });
     const res = await fetch(`${base}/collect`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: huge,
     });

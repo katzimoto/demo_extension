@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { normalizeConfig, DEFAULT_MIN_INTERVAL_MS } = require('../src/lib/config.js');
+const { normalizeConfig, DEFAULT_MIN_INTERVAL_MS, shouldThrottle } = require('../src/lib/config.js');
 
 test('a well-formed config passes through', () => {
   assert.deepEqual(
@@ -64,4 +64,24 @@ test('FAILS CLOSED: a corrupted interval throttles rather than unthrottles', () 
       `a garbled interval (${String(bad)}) must not collect more often than a well-formed one`
     );
   }
+});
+
+test('shouldThrottle: no throttling when the interval is zero or negative', () => {
+  assert.equal(shouldThrottle(1000, 900, 0), false);
+  assert.equal(shouldThrottle(1000, 900, -5), false);
+});
+
+test('shouldThrottle: no throttling when nothing was sent before', () => {
+  assert.equal(shouldThrottle(1000, 0, 5000), false);
+  assert.equal(shouldThrottle(1000, NaN, 5000), false);
+});
+
+test('shouldThrottle: throttles inside the window, not outside', () => {
+  assert.equal(shouldThrottle(5000, 1000, 5000), true);
+  assert.equal(shouldThrottle(6000, 1000, 5000), false);
+  assert.equal(shouldThrottle(6001, 1000, 5000), false);
+});
+
+test('shouldThrottle: a backwards clock does not wedge the throttle', () => {
+  assert.equal(shouldThrottle(1000, 9999, 5000), false);
 });

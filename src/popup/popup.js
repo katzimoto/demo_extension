@@ -124,9 +124,12 @@ async function getEndpoint() {
   const stored = await chrome.storage.local.get('endpoint');
   const endpoint = stored.endpoint || DEFAULT_ENDPOINT;
   try {
-    new URL(endpoint);
-  } catch {
-    console.warn('Form Inspector: stored endpoint is not a URL, using default', endpoint);
+    const parsed = new URL(endpoint);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(`unsupported scheme ${parsed.protocol}`);
+    }
+  } catch (err) {
+    console.warn('Form Inspector: stored endpoint unusable, using default', endpoint, err);
     return DEFAULT_ENDPOINT;
   }
   return endpoint;
@@ -190,7 +193,7 @@ async function syncToServer(url, forms) {
 
   let config;
   try {
-    const res = await fetch(`${endpoint}/config`);
+    const res = await fetch(`${endpoint}/config`, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) throw new Error(`config responded ${res.status}`);
     config = normalizeConfig(await res.json());
   } catch (err) {
@@ -207,6 +210,13 @@ async function syncToServer(url, forms) {
     return;
   }
 
+  if (forms.length === 0) {
+    collectorEl.replaceChildren(
+      el('p', 'muted', 'No forms on this page — nothing sent.')
+    );
+    return;
+  }
+
   const now = Date.now();
   let previous;
   try {
@@ -218,7 +228,7 @@ async function syncToServer(url, forms) {
     console.warn('Form Inspector: collector setup failed', err);
     return;
   }
-  if (config.minIntervalMs > 0 && now - previous < config.minIntervalMs) {
+  if (shouldThrottle(now, previous, config.minIntervalMs)) {
     const wait = Math.ceil((config.minIntervalMs - (now - previous)) / 1000);
     collectorEl.replaceChildren(
       el('p', 'muted', `Throttled by the server — ${wait}s until the next send.`)
@@ -233,6 +243,7 @@ async function syncToServer(url, forms) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(5000),
     });
     const body = await res.json().catch(() => ({}));
 
@@ -243,7 +254,6 @@ async function syncToServer(url, forms) {
       return;
     }
 
-    await markSent(url, now);
     collectorEl.replaceChildren(
       el('p', 'ok',
         `Sent — server received ${body.formCount} form${body.formCount === 1 ? '' : 's'}, ` +
@@ -254,6 +264,13 @@ async function syncToServer(url, forms) {
   } catch (err) {
     collectorEl.replaceChildren(el('p', 'error', 'Send failed.'));
     console.warn('Form Inspector: send failed', err);
+    return;
+  }
+
+  try {
+    await markSent(url, now);
+  } catch (err) {
+    console.warn('Form Inspector: could not record send time', err);
   }
 }
 
@@ -320,10 +337,12 @@ async function main() {
   const tab = await getActiveTab();
   if (!tab) {
     urlEl.textContent = 'No active tab.';
+    collectorEl.replaceChildren(el('p', 'muted', 'Nothing to send — no active tab.'));
     return;
   }
   if (!tab.url) {
     urlEl.textContent = 'Active tab has no URL.';
+    collectorEl.replaceChildren(el('p', 'muted', 'Nothing to send — the tab has no URL.'));
     return;
   }
   urlEl.textContent = tab.url;
@@ -334,6 +353,9 @@ async function main() {
       result = await scanForms(tab.id);
     } catch (err) {
       formsEl.replaceChildren(el('p', 'error', CANNOT_INJECT));
+      collectorEl.replaceChildren(
+        el('p', 'muted', 'Nothing to send — the page could not be scanned.')
+      );
       console.warn('Form Inspector: scan failed', err);
       return;
     }
