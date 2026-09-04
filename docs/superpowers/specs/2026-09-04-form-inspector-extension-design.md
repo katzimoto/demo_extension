@@ -18,6 +18,14 @@ The two halves meet at Chrome's visit *transition* types: a visit recorded
 as `form_submit` is a visit that happened because a form on that page was
 submitted. The popup calls those out.
 
+## Frames
+
+Top frame only. `executeScript` is not given `allFrames`, so forms inside
+iframes — embedded payment forms, third-party logins — are not reported, and
+such a page shows "No forms on this page." This is a deliberate position, not
+an oversight: `allFrames` would widen the injection surface and require the
+descriptor/cache index model to become frame-aware.
+
 ## Non-goals
 
 Explicitly excluded, decided during design:
@@ -59,7 +67,7 @@ popup is closed, so the extension declares no background worker.
 |-------------|-----|
 | `activeTab` | Read the active tab's URL and inject into it, on user gesture |
 | `scripting` | `chrome.scripting.executeScript` |
-| `history`   | `chrome.history.getVisits` and `chrome.history.search` |
+| `history`   | `chrome.history.getVisits` |
 
 ## File layout
 
@@ -97,10 +105,16 @@ if (typeof module !== 'undefined' && module.exports) {
 One exported pure function:
 
 ```
-extractForms(doc: Document) -> { forms: FormDescriptor[] }
+extractForms(doc: Document)    -> { forms: FormDescriptor[] }
+formControls(form: HTMLFormElement) -> Element[]
 ```
 
-It touches no `chrome.*` API, performs no rendering, and mutates nothing.
+`formControls` is the module's second export and the only cross-module interface
+in the extension: `content/inspector.js` uses it to cache element references in
+an order that matches the `fields[]` indices by construction. The index
+alignment described below rides on both sides calling this one function.
+
+They touch no `chrome.*` API, perform no rendering, and mutate nothing.
 This is the whole reason the module exists separately: it is the only part
 with real logic, and it is testable under jsdom.
 
