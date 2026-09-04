@@ -4,7 +4,8 @@
   "private": true,
   "description": "Chrome extension that inspects page forms and URL visit history",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "server": "node server/index.js"
   },
   "devDependencies": {
     "jsdom": "^24.1.0"

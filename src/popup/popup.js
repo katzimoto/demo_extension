@@ -3,6 +3,8 @@
 const urlEl = document.getElementById('page-url');
 const formsEl = document.getElementById('forms');
 const visitsEl = document.getElementById('visits');
+const collectorEl = document.getElementById('collector');
+const DEFAULT_ENDPOINT = 'http://localhost:3000';
 
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -118,6 +120,160 @@ function wireHighlighting(tabId) {
   });
 }
 
+async function getEndpoint() {
+  const stored = await chrome.storage.local.get('endpoint');
+  const endpoint = stored.endpoint || DEFAULT_ENDPOINT;
+  try {
+    const parsed = new URL(endpoint);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(`unsupported scheme ${parsed.protocol}`);
+    }
+  } catch (err) {
+    console.warn('Form Inspector: stored endpoint unusable, using default', endpoint, err);
+    return DEFAULT_ENDPOINT;
+  }
+  return endpoint;
+}
+
+function originPattern(endpoint) {
+  return `${new URL(endpoint).origin}/*`;
+}
+
+async function hasOriginAccess(endpoint) {
+  return chrome.permissions.contains({ origins: [originPattern(endpoint)] });
+}
+
+async function lastSentAt(url) {
+  const key = `lastSent:${url}`;
+  const stored = await chrome.storage.local.get(key);
+  return stored[key] || 0;
+}
+
+async function markSent(url, when) {
+  await chrome.storage.local.set({ [`lastSent:${url}`]: when });
+}
+
+function renderConnect(endpoint) {
+  collectorEl.replaceChildren();
+  collectorEl.appendChild(el('p', 'muted', 'Not connected to a collector.'));
+
+  const button = el('button', null, 'Connect to server');
+  button.addEventListener('click', async () => {
+    const granted = await chrome.permissions.request({
+      origins: [originPattern(endpoint)],
+    });
+    if (granted) {
+      collectorEl.replaceChildren(el('p', 'muted', 'Connected. Reopen the popup to send.'));
+    } else {
+      collectorEl.replaceChildren(el('p', 'muted', 'Permission declined.'));
+    }
+  });
+  collectorEl.appendChild(button);
+  collectorEl.appendChild(el('p', 'endpoint', endpoint));
+}
+
+async function syncToServer(url, forms) {
+  let endpoint;
+  let granted;
+  try {
+    endpoint = await getEndpoint();
+    granted = await hasOriginAccess(endpoint);
+  } catch (err) {
+    collectorEl.replaceChildren(
+      el('p', 'error', 'Could not read collector settings.')
+    );
+    console.warn('Form Inspector: collector setup failed', err);
+    return;
+  }
+
+  if (!granted) {
+    renderConnect(endpoint);
+    return;
+  }
+
+  let config;
+  try {
+    const res = await fetch(`${endpoint}/config`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`config responded ${res.status}`);
+    config = normalizeConfig(await res.json());
+  } catch (err) {
+    collectorEl.replaceChildren(
+      el('p', 'error', 'Collector unreachable — nothing was sent.'),
+      el('p', 'endpoint', endpoint)
+    );
+    console.warn('Form Inspector: config fetch failed', err);
+    return;
+  }
+
+  if (!config.enabled) {
+    collectorEl.replaceChildren(el('p', 'muted', 'Sending disabled by the server.'));
+    return;
+  }
+
+  if (forms.length === 0) {
+    collectorEl.replaceChildren(
+      el('p', 'muted', 'No forms on this page — nothing sent.')
+    );
+    return;
+  }
+
+  const now = Date.now();
+  let previous;
+  try {
+    previous = await lastSentAt(url);
+  } catch (err) {
+    collectorEl.replaceChildren(
+      el('p', 'error', 'Could not read collector settings.')
+    );
+    console.warn('Form Inspector: collector setup failed', err);
+    return;
+  }
+  if (shouldThrottle(now, previous, config.minIntervalMs)) {
+    const wait = Math.ceil((config.minIntervalMs - (now - previous)) / 1000);
+    collectorEl.replaceChildren(
+      el('p', 'muted', `Throttled by the server — ${wait}s until the next send.`)
+    );
+    return;
+  }
+
+  const payload = buildPayload(forms, url, now, config);
+
+  try {
+    const res = await fetch(`${endpoint}/collect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(5000),
+    });
+    const body = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      collectorEl.replaceChildren(
+        el('p', 'error', `Server rejected the payload (${res.status}): ${body.error || 'no reason given'}`)
+      );
+      return;
+    }
+
+    collectorEl.replaceChildren(
+      el('p', 'ok',
+        `Sent — server received ${body.formCount} form${body.formCount === 1 ? '' : 's'}, ` +
+        `${body.fieldCount} field${body.fieldCount === 1 ? '' : 's'} as ${body.id}.`),
+      el('p', 'muted', config.includeUrl ? 'Page URL included.' : 'Page URL withheld by server config.'),
+      el('p', 'endpoint', endpoint)
+    );
+  } catch (err) {
+    collectorEl.replaceChildren(el('p', 'error', 'Send failed.'));
+    console.warn('Form Inspector: send failed', err);
+    return;
+  }
+
+  try {
+    await markSent(url, now);
+  } catch (err) {
+    console.warn('Form Inspector: could not record send time', err);
+  }
+}
+
 const TRANSITION_LABELS = {
   link: 'link',
   typed: 'typed',
@@ -181,10 +337,12 @@ async function main() {
   const tab = await getActiveTab();
   if (!tab) {
     urlEl.textContent = 'No active tab.';
+    collectorEl.replaceChildren(el('p', 'muted', 'Nothing to send — no active tab.'));
     return;
   }
   if (!tab.url) {
     urlEl.textContent = 'Active tab has no URL.';
+    collectorEl.replaceChildren(el('p', 'muted', 'Nothing to send — the tab has no URL.'));
     return;
   }
   urlEl.textContent = tab.url;
@@ -195,6 +353,9 @@ async function main() {
       result = await scanForms(tab.id);
     } catch (err) {
       formsEl.replaceChildren(el('p', 'error', CANNOT_INJECT));
+      collectorEl.replaceChildren(
+        el('p', 'muted', 'Nothing to send — the page could not be scanned.')
+      );
       console.warn('Form Inspector: scan failed', err);
       return;
     }
@@ -204,6 +365,12 @@ async function main() {
     } catch (err) {
       formsEl.replaceChildren(el('p', 'error', 'Could not render the form list.'));
       console.error('Form Inspector: render failed', err);
+    }
+    try {
+      await syncToServer(tab.url, result.forms);
+    } catch (err) {
+      collectorEl.replaceChildren(el('p', 'error', 'Collector sync failed.'));
+      console.error('Form Inspector: sync failed', err);
     }
   })();
 
